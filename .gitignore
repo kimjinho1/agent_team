@@ -2,3 +2,9 @@ node_modules/
 .env
 .env.*
 *.log
+
+# 옛 레이아웃 잔해 — 지금은 ~/.agent-org 아래에 저장한다
+agent-org.db
+agent-org.db-*
+.agent-org/
+agent-org/

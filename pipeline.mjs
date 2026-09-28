@@ -103,22 +103,8 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   db.prepare('UPDATE tasks SET run_dir = ? WHERE id = ?').run(runDir, taskId);
 
   // ── 온보딩 ────────────────────────────────────────────
-  // 이미 굴러가던 프로젝트면 코드를 먼저 읽는다. 모르는 채로 만들면
-  // 기존 관례를 무시한 코드가 나온다.
-  let onboardCost = 0;
   const repos = project.repos || [];
-  if (!signal.cancelled && needsOnboarding(project, repos)) {
-    console.log('  기존 코드 파악 중…');
-    db.prepare("UPDATE tasks SET status = 'onboarding' WHERE id = ?").run(taskId);
-    try {
-      const r = await runOnboarding(project, repos, { signal });
-      onboardCost = r.cost;
-      if (r.ok) console.log('  코드베이스 파악 완료 → knowledge/CODEBASE.md');
-    } catch (e) {
-      console.warn('  코드 파악 실패 (계속 진행):', e.message);
-    }
-    db.prepare("UPDATE tasks SET status = 'running' WHERE id = ?").run(taskId);
-  }
+  const onboardCost = await onboardIfNeeded(db, project, repos, { taskId, signal });
 
   // ── 채용 ──────────────────────────────────────────────
   // 브리핑에서 이미 팀을 짰으면 다시 뽑지 않는다 (같은 값에 두 번 낼 이유가 없다)
@@ -275,6 +261,29 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   });
 
   return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
+}
+
+/**
+ * 이미 굴러가던 프로젝트면 코드를 먼저 읽는다.
+ *
+ * 모르는 채로 만들면 기존 관례를 무시한 코드가 나온다. 다만 파악에 실패해도
+ * 실행은 계속한다 — 아무것도 못 하는 것보다는 낫다.
+ */
+async function onboardIfNeeded(db, project, repos, { taskId, signal }) {
+  if (signal.cancelled || !needsOnboarding(project, repos)) return 0;
+
+  console.log('  기존 코드 파악 중…');
+  db.prepare("UPDATE tasks SET status = 'onboarding' WHERE id = ?").run(taskId);
+  let cost = 0;
+  try {
+    const r = await runOnboarding(project, repos, { signal });
+    cost = r.cost;
+    if (r.ok) console.log('  코드베이스 파악 완료 → knowledge/CODEBASE.md');
+  } catch (e) {
+    console.warn('  코드 파악 실패 (계속 진행):', e.message);
+  }
+  db.prepare("UPDATE tasks SET status = 'running' WHERE id = ?").run(taskId);
+  return cost;
 }
 
 /**

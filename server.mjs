@@ -19,6 +19,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** public/ 에서 내보낼 파일 종류 */
 const STATIC_TYPES = { '.css': 'text/css', '.js': 'text/javascript' };
 
+function sendJson(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
 /** 뽑힌 팀 안에서 동시에 일할 수 있는 묶음 */
 function buildWaves(roster) {
   const hired = new Set(roster.map((p) => p.key));
@@ -184,17 +189,14 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         const body = await readJsonBody(req);
         const requirement = String(body.requirement || '').trim();
         if (!requirement) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'requirement is required' }));
+          sendJson(res, 400, { error: 'requirement is required' });
           return;
         }
         queue.push(requirement);
         processQueue();
-        res.writeHead(202, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ queued: true, queueLength: queue.length }));
+        sendJson(res, 202, { queued: true, queueLength: queue.length });
       } catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'invalid body' }));
+        sendJson(res, 400, { error: 'invalid body' });
       }
       return;
     }
@@ -204,8 +206,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       const dropped = queue.length;
       queue.length = 0;
       if (currentSignal) currentSignal.cancelled = true;
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ cancelling: !!currentSignal, droppedFromQueue: dropped }));
+      sendJson(res, 200, { cancelling: !!currentSignal, droppedFromQueue: dropped });
       return;
     }
 
@@ -215,8 +216,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
       if (!task) { res.writeHead(404); res.end('not found'); return; }
       const stages = db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(id);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ task, stages }));
+      sendJson(res, 200, { task, stages });
       return;
     }
 
@@ -236,19 +236,16 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
     // 코드 파악을 지금 시작한다 (업무를 던지지 않아도 눌러서 할 수 있게)
     if (req.method === 'POST' && url.pathname === '/api/onboard') {
       if (onboardingState.running) {
-        res.writeHead(409, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: '이미 파악 중입니다' }));
+        sendJson(res, 409, { error: '이미 파악 중입니다' });
         return;
       }
       if (!hasExistingCode(project.workspace)) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: '이 폴더에는 파악할 코드가 없습니다' }));
+        sendJson(res, 400, { error: '이 폴더에는 파악할 코드가 없습니다' });
         return;
       }
 
       onboardingState = { running: true, at: new Date().toISOString(), error: null };
-      res.writeHead(202, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ started: true }));
+      sendJson(res, 202, { started: true });
 
       // 응답은 바로 주고 뒤에서 돌린다 (몇 분 걸린다)
       runOnboarding(project, project.repos)
@@ -258,11 +255,10 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
     }
 
     if (url.pathname === '/api/onboard/status') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
+      sendJson(res, 200, {
         ...onboardingState,
         onboarded: fs.existsSync(path.join(orgDir(project), 'knowledge', 'CODEBASE.md')),
-      }));
+      });
       return;
     }
 
@@ -295,8 +291,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         };
       });
 
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
+      sendJson(res, 200, {
         name: project.name,
         workspace: project.workspace,
         docsDir: orgDir(project),
@@ -339,7 +334,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
           at: (t.created_at || '').slice(0, 16),
           git: t.git_result ? JSON.parse(t.git_result) : null,
         })),
-      }));
+      });
       return;
     }
 
@@ -349,8 +344,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         const body = await readJsonBody(req);
         const requirement = String(body.requirement || '').trim();
         if (!requirement) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'requirement is required' }));
+          sendJson(res, 400, { error: 'requirement is required' });
           return;
         }
         const hired = await hireTeam(requirement, codebaseBrief(project, 2500));
@@ -362,8 +356,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         const guide = KIND_GUIDE[hired.kind] || KIND_GUIDE.new;
         const writable = project.repos.length ? checkWritable(project.repos) : { ok: true, problems: [] };
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
+        sendJson(res, 200, {
           requirement,
           reason: hired.reason,
           cost: hired.cost,
@@ -391,10 +384,9 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
               .map((k) => ROLE_BY_KEY[k]?.label || k),
           })),
           waves: buildWaves(hired.roster),
-        }));
+        });
       } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: String(e.message || e) }));
+        sendJson(res, 500, { error: String(e.message || e) });
       }
       return;
     }
@@ -416,8 +408,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
           .map((r) => r.role_key)
       );
 
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(CATALOG.map((r) => ({
+      sendJson(res, 200, CATALOG.map((r) => ({
         key: r.key, label: r.label, category: r.category, blurb: r.blurb,
         artifact: r.defaultArtifact, stackKey: r.stackKey || null,
         decidesStack: !!r.decidesStack, watchdog: !!r.watchdog,
@@ -429,7 +420,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         handsTo: CATALOG.filter((x) => x.deps.includes(r.key)).map((x) => x.label),
         stats: statMap[r.key] || { hires: 0, cost: 0, avg_cost: 0, done: 0 },
         employedNow: employedNow.has(r.key),
-      }))));
+      })));
       return;
     }
 
@@ -449,15 +440,13 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         }
         return out;
       };
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(fs.existsSync(root) ? walk(root) : []));
+      sendJson(res, 200, fs.existsSync(root) ? walk(root) : []);
       return;
     }
 
     if (url.pathname === '/api/runs') {
       const rows = db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 30').all();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(rows));
+      sendJson(res, 200, rows);
       return;
     }
 

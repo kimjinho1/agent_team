@@ -1,0 +1,2484 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>AI Org — 실시간 근무 현황</title>
+<style>
+  :root {
+    --ink: #e9edf4;
+    --sub: #b6c0d0;
+    --faint: #7e8ba0;
+    --line: #333d52;
+    --card: #1b2130;
+    --panel: #222a3a;
+    --bg: #0f131b;
+    --green: #3ddc84;
+    --amber: #ffb14a;
+    --red: #ff6a5e;
+    --indigo: #8b7bff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 30px 24px 80px;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  header { margin-bottom: 20px; }
+  header .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--indigo); margin-bottom: 6px;
+  }
+  h1 { font-size: 21px; margin: 0; }
+
+  .assign-bar {
+    background: var(--panel); border: 2px solid var(--line);
+    padding: 12px 14px; margin: 16px 0; display: flex; gap: 10px;
+    box-shadow: 0 3px 0 #080b12;
+  }
+  .assign-bar input {
+    flex: 1; border: 2px solid var(--line); background: #0d1119; color: var(--ink);
+    padding: 9px 11px; font-size: 14px; font-family: inherit; outline: none;
+  }
+  .assign-bar input:focus { border-color: var(--indigo); }
+  .assign-bar button {
+    background: var(--indigo); color: #11131c; border: none;
+    padding: 9px 18px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit;
+    white-space: nowrap; box-shadow: 0 3px 0 #4f43a8;
+  }
+  .assign-bar button:active { transform: translateY(2px); box-shadow: 0 1px 0 #4f43a8; }
+  .assign-bar button:disabled { opacity: 0.5; cursor: default; }
+
+  .current-task {
+    background: var(--panel); border: 2px solid var(--line);
+    padding: 13px 16px; margin-bottom: 18px; box-shadow: 0 3px 0 #080b12;
+  }
+  .current-task .req { font-size: 14px; color: var(--sub); margin-bottom: 7px; }
+  .current-task .meta {
+    display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .current-task .meta b { color: var(--ink); }
+  .empty-task { text-align: center; color: var(--faint); font-size: 13.5px; padding: 8px 0; }
+
+  .office-frame {
+    position: relative; line-height: 0;
+    border: 3px solid #39435a; background: #0f131b; box-shadow: 0 3px 0 #080b12;
+  }
+  canvas#office {
+    width: 100%; height: auto; display: block;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+  }
+  .overlay { position: absolute; inset: 0; }
+  .agent-hot { position: absolute; cursor: pointer; border: 2px solid transparent; }
+  .agent-hot:hover { background: rgba(255,255,255,0.08); }
+  .agent-hot.selected { border-color: var(--indigo); background: rgba(139,123,255,0.14); }
+  .agent-hot .chip {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(10,13,20,0.92); border: 2px solid #5b6684;
+    color: #e9edf4; font-size: 13px; font-weight: 800; line-height: 1;
+    padding: 5px 8px; white-space: nowrap; letter-spacing: -0.02em;
+    box-shadow: 0 2px 0 #05070c;
+  }
+  .agent-hot .chip.side-right { left: 100%; margin-left: 7px; }
+  .agent-hot .chip.side-left { right: 100%; margin-right: 7px; }
+  .agent-hot.running .chip { border-color: var(--amber); color: var(--amber); }
+  .agent-hot.done .chip { border-color: var(--green); color: var(--green); }
+  .agent-hot.failed .chip { border-color: var(--red); color: var(--red); }
+
+  .legend {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;
+    font-size: 11px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .legend span b { color: var(--sub); font-weight: 700; }
+
+  .detail {
+    background: var(--panel); border: 2px solid var(--line);
+    padding: 18px 20px; margin-top: 18px; box-shadow: 0 3px 0 #080b12;
+  }
+  .detail .d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .detail .d-avatar {
+    width: 36px; height: 36px; color: #11131c; font-weight: 800; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset -2px -2px 0 rgba(0,0,0,0.25);
+  }
+  .detail .d-title { font-size: 15.5px; font-weight: 800; }
+  .detail .d-status {
+    font-size: 11.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .token-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 16px; }
+  @media (max-width: 640px) { .token-grid { grid-template-columns: repeat(2, 1fr); } }
+  .token-box { background: var(--card); border: 2px solid var(--line); padding: 9px 11px; }
+  .token-box .t-label {
+    font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .token-box .t-val { font-size: 15px; font-weight: 800; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .detail h4 {
+    font-size: 10.5px; font-weight: 800; color: var(--faint); text-transform: uppercase;
+    letter-spacing: 0.1em; margin: 16px 0 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .detail h4:first-of-type { margin-top: 0; }
+  .output-box {
+    background: #0d1119; border: 2px solid var(--line); padding: 13px 15px; color: var(--sub);
+    font-size: 12.5px; white-space: pre-wrap; max-height: 340px; overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .cum-row {
+    display: flex; gap: 16px; flex-wrap: wrap; font-size: 11.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .cum-row b { color: var(--ink); }
+  .artifact-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .artifact-link {
+    display: inline-block; background: var(--indigo); color: #11131c; font-weight: 800;
+    font-size: 12px; padding: 6px 12px; text-decoration: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; box-shadow: 0 2px 0 #4f43a8;
+  }
+  .artifact-link:hover { opacity: 0.92; }
+  .artifact-path { font-size: 10.5px; color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  .ws-bar {
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+    font-size: 10.5px; color: var(--faint); margin-bottom: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ws-bar b { color: var(--sub); font-weight: 700; }
+  .ws-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+
+  /* ---- pipeline strip: structure at a glance ---- */
+  .pipeline {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    margin-top: 16px; padding: 10px 12px;
+    background: var(--panel); border: 2px solid var(--line); box-shadow: 0 3px 0 #080b12;
+  }
+  .pipe-title {
+    font-size: 10px; font-weight: 800; color: var(--faint); letter-spacing: 0.12em;
+    text-transform: uppercase; margin-right: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .pipe-group { display: flex; flex-direction: column; gap: 4px; }
+  .pipe-sep { color: #46516b; font-size: 13px; padding: 0 2px; }
+  .pipe-chip {
+    display: flex; align-items: center; gap: 6px; padding: 4px 9px;
+    background: var(--card); border: 2px solid var(--line); border-left-width: 4px;
+    font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap;
+  }
+  .pipe-chip:hover { border-color: #5b6684; }
+  .pipe-chip.sel { border-color: var(--indigo); }
+  .pipe-chip.running { border-left-color: var(--amber); color: var(--amber); }
+  .pipe-chip.done { border-left-color: var(--green); }
+  .pipe-chip.failed { border-left-color: var(--red); color: var(--red); }
+  .pipe-chip.pending, .pipe-chip.idle, .pipe-chip.blocked { border-left-color: #47526e; color: var(--faint); }
+  .pipe-chip .pdot { width: 7px; height: 7px; background: #5b6684; flex: 0 0 auto; }
+  .pipe-chip.running .pdot { background: var(--amber); animation: blip 0.9s infinite steps(2); }
+  .pipe-chip.done .pdot { background: var(--green); }
+  .pipe-chip.failed .pdot { background: var(--red); }
+  @keyframes blip { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+  /* ---- agent cards: wide enough to actually read ---- */
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 10px; margin-top: 10px;
+  }
+  .acard {
+    background: var(--card); border: 2px solid var(--line); border-top-width: 5px;
+    border-top-color: #47526e; padding: 12px 14px; cursor: pointer;
+  }
+  .acard:hover { border-color: #5b6684; }
+  .acard.sel { border-color: var(--indigo); }
+  .acard.running { border-top-color: var(--amber); background: #222a3c; }
+  .acard.done { border-top-color: var(--green); }
+  .acard.failed { border-top-color: var(--red); }
+  .acard.pending, .acard.idle, .acard.blocked { opacity: 0.62; }
+
+  .ac-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; }
+  .ac-name { font-size: 16px; font-weight: 800; }
+  .ac-state {
+    font-size: 10.5px; font-weight: 800; padding: 3px 7px; border: 1px solid;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ac-state.running { color: var(--amber); border-color: var(--amber); }
+  .ac-state.done { color: var(--green); border-color: var(--green); }
+  .ac-state.failed { color: var(--red); border-color: var(--red); }
+  .ac-state.pending, .ac-state.idle, .ac-state.blocked { color: var(--faint); border-color: #47526e; }
+  .ac-time {
+    margin-left: auto; font-size: 11px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .ac-steps { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 9px; }
+  .ac-step {
+    font-size: 10px; font-weight: 700; padding: 3px 7px; border: 1px solid #39435a;
+    color: #6f7b92; display: flex; align-items: center; gap: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ac-step.sdone { color: var(--green); border-color: #285c40; }
+  .ac-step.scur { color: #11131c; background: var(--amber); border-color: var(--amber); }
+
+  .ac-live {
+    min-height: 50px; background: #10141d; border: 1px solid #2b3345; padding: 9px 10px;
+  }
+  .ac-main {
+    font-size: 12px; line-height: 1.5; color: var(--sub);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .acard.running .ac-main { color: #ffdcae; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .ac-sub {
+    display: block; margin-top: 4px; font-size: 10px; color: #667b94;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ac-verdict {
+    font-size: 10.5px; font-weight: 800; padding: 3px 7px; color: #11131c;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ac-verdict.PASS { background: var(--green); }
+  .ac-verdict.FAIL { background: var(--red); }
+  .ac-scope {
+    font-size: 10px; color: var(--faint); font-style: normal;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px;
+  }
+  .ac-review {
+    font-size: 10px; font-weight: 800; padding: 3px 7px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ac-review.approved { background: #14361f; color: var(--green); }
+  .ac-review.reviewing, .ac-review.revising { background: #3a2f12; color: var(--amber); }
+  .ac-review.revised { background: #1f2f4a; color: #8ab6ff; }
+  .ac-review.changes_requested { background: #3f1d1d; color: var(--red); }
+  .ac-rework {
+    font-size: 10px; font-weight: 800; padding: 3px 7px; color: #11131c; background: #d98cff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .dots i { animation: fade 1.2s infinite; font-style: normal; color: var(--amber); }
+  .dots i:nth-child(2) { animation-delay: 0.2s; }
+  .dots i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes fade { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+  .ac-foot {
+    display: flex; align-items: center; gap: 10px; margin-top: 9px;
+    font-size: 10.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .ac-file {
+    background: var(--indigo); color: #11131c; font-weight: 800; text-decoration: none;
+    padding: 4px 9px; box-shadow: 0 2px 0 #4f43a8;
+  }
+  .ac-file:hover { opacity: 0.9; }
+  .ac-dep { color: #6f7b92; }
+
+  /* ---- detail modal ---- */
+  .modal-back {
+    position: fixed; inset: 0; background: rgba(6,9,14,0.78);
+    display: flex; align-items: center; justify-content: center; padding: 28px 20px; z-index: 50;
+  }
+  .modal {
+    background: var(--panel); border: 3px solid #4a5570; box-shadow: 0 6px 0 #05070c;
+    width: min(880px, 100%); max-height: 86vh; display: flex; flex-direction: column;
+  }
+  .modal-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 2px solid var(--line); flex: 0 0 auto;
+  }
+  .modal-title { font-size: 17px; font-weight: 800; }
+  .modal-x {
+    margin-left: auto; background: #2c344a; border: 2px solid #4a5570; color: var(--ink);
+    font-size: 14px; font-weight: 800; line-height: 1; padding: 6px 11px; cursor: pointer;
+    font-family: inherit;
+  }
+  .modal-x:hover { background: var(--red); border-color: var(--red); color: #11131c; }
+  .modal-body { padding: 16px 18px; overflow-y: auto; }
+  .stop-btn {
+    background: #4a2230; color: #ffb4ab; border: 2px solid #8c3a44;
+    padding: 9px 14px; font-size: 13px; font-weight: 800; cursor: pointer;
+    font-family: inherit; white-space: nowrap; box-shadow: 0 3px 0 #0b0f17;
+  }
+  .stop-btn:hover { background: var(--red); color: #11131c; border-color: var(--red); }
+  .stop-btn:disabled { opacity: 0.35; cursor: default; }
+  .run-pick {
+    background: #10141d; color: var(--sub); border: 2px solid var(--line);
+    padding: 7px 9px; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-width: 320px;
+  }
+  .hist-note {
+    font-size: 10.5px; color: var(--amber); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* 착수 브리핑 */
+  .brief-req {
+    background: #10141d; border: 2px solid var(--line); padding: 12px 14px;
+    font-size: 14px; color: var(--ink); margin-bottom: 4px;
+  }
+  .kind-tag {
+    display: inline-block; font-size: 11px; font-weight: 800; padding: 4px 9px;
+    background: #2a3550; color: #9ec2ff; border: 1px solid #44567e; margin-bottom: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .repo-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin-bottom: 5px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .repo-name { font-weight: 800; color: var(--sub); }
+  .repo-branch { color: var(--faint); }
+  .repo-dirty { margin-left: auto; color: var(--red); font-weight: 800; }
+  .repo-clean { margin-left: auto; color: var(--green); }
+  .warn-box {
+    background: #3a1d1d; border: 2px solid var(--red); padding: 11px 13px; margin-bottom: 14px;
+    font-size: 12px; color: #ffb4ab; line-height: 1.6;
+  }
+  .warn-box b { color: #fff; }
+  .brief-why {
+    font-size: 12.5px; color: #ffdcae; line-height: 1.6; margin: 10px 0 16px;
+    border-left: 3px solid var(--amber); padding-left: 11px;
+  }
+  .brief-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+    gap: 10px; margin-bottom: 16px;
+  }
+  .hire {
+    background: var(--card); border: 2px solid var(--line); border-top-width: 4px;
+    padding: 10px 12px; display: flex; gap: 10px;
+  }
+  .hire canvas {
+    width: 46px; height: 52px; flex: 0 0 auto; image-rendering: pixelated;
+    background: #0d1119; border: 1px solid var(--line);
+  }
+  .hire-name { font-size: 13.5px; font-weight: 800; margin-bottom: 2px; }
+  .hire-scope { font-size: 11px; color: var(--sub); line-height: 1.45; }
+  .hire-extra {
+    font-size: 9.5px; color: var(--faint); margin-top: 4px; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .hire-extra b { color: #8ab6ff; font-weight: 700; }
+
+  .wave-row {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
+    font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .wave-no { color: var(--faint); min-width: 34px; }
+  .wave-chip { background: var(--card); border: 1px solid var(--line); padding: 3px 8px; color: var(--sub); }
+  .wave-plus { color: var(--amber); font-weight: 800; }
+
+  .brief-foot {
+    display: flex; gap: 10px; align-items: center; padding: 14px 18px;
+    border-top: 2px solid var(--line); flex: 0 0 auto;
+  }
+  .btn-go {
+    background: var(--green); color: #0c1a12; border: none; padding: 10px 20px;
+    font-size: 14px; font-weight: 800; cursor: pointer; font-family: inherit;
+    box-shadow: 0 3px 0 #1e7a48;
+  }
+  .btn-go:active { transform: translateY(2px); box-shadow: 0 1px 0 #1e7a48; }
+  .btn-cancel {
+    background: #2c344a; color: var(--sub); border: 2px solid #4a5570;
+    padding: 9px 16px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit;
+  }
+  .brief-note {
+    margin-left: auto; font-size: 10.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .brief-loading { text-align: center; padding: 40px 0; color: var(--faint); font-size: 13.5px; }
+  .proj-btn {
+    background: #1f3a2e; color: #a8e6c4; border: 2px solid #35735a;
+    padding: 9px 14px; font-size: 13px; font-weight: 800; cursor: pointer;
+    font-family: inherit; white-space: nowrap; box-shadow: 0 3px 0 #0b0f17;
+  }
+  .proj-btn:hover { border-color: var(--green); }
+  .proj-btn { position: relative; }
+
+  /* 파악이 필요하면 버튼 자체가 알려준다 — 눌러봐야 아는 건 알림이 아니다 */
+  .proj-btn.need {
+    background: #3a2a12; color: #ffd9a0; border-color: var(--amber);
+    animation: needPulse 2s infinite;
+  }
+  @keyframes needPulse {
+    0%, 100% { box-shadow: 0 3px 0 #0b0f17; }
+    50% { box-shadow: 0 3px 0 #0b0f17, 0 0 0 3px rgba(255,177,74,0.28); }
+  }
+  .proj-btn.busy { background: #1f2a3a; color: #cfe0ff; border-color: #3f5a80; }
+  .need-dot {
+    position: absolute; top: -6px; right: -6px; width: 13px; height: 13px;
+    background: var(--amber); border: 2px solid #12161f;
+  }
+  .need-hint {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    background: #2a2a1d; border: 2px solid var(--amber); padding: 9px 13px;
+    font-size: 12px; color: #ffdcae;
+  }
+  .need-hint b { color: #fff; }
+  .need-hint button {
+    margin-left: auto; background: var(--amber); color: #1a1205; border: none;
+    padding: 6px 12px; font-size: 11.5px; font-weight: 800; cursor: pointer;
+    font-family: inherit; white-space: nowrap;
+  }
+
+  .onboard-box {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: #2a2a1d; border: 2px solid var(--amber); padding: 13px 15px; margin-bottom: 14px;
+  }
+  .onboard-msg { font-size: 12.5px; color: #ffdcae; line-height: 1.6; flex: 1; min-width: 220px; }
+  .onboard-msg b { color: #fff; }
+  .btn-onboard {
+    background: var(--amber); color: #1a1205; border: none; padding: 10px 18px;
+    font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit;
+    box-shadow: 0 3px 0 #a86a1c; white-space: nowrap;
+  }
+  .btn-onboard:active { transform: translateY(2px); box-shadow: 0 1px 0 #a86a1c; }
+  .btn-onboard:disabled { opacity: 0.6; cursor: default; }
+  .onboard-run {
+    display: flex; align-items: center; gap: 10px;
+    background: #1f2a3a; border: 2px solid #3f5a80; padding: 13px 15px; margin-bottom: 14px;
+    font-size: 12.5px; color: #cfe0ff;
+  }
+  .pj-head { padding: 16px 20px 0; }
+  .pj-name { font-size: 22px; font-weight: 800; margin-bottom: 3px; }
+  .pj-path {
+    font-size: 10.5px; color: var(--faint); word-break: break-all; margin-bottom: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .pj-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .pj-stat {
+    background: var(--card); border: 2px solid var(--line); padding: 7px 12px;
+    font-size: 10.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .pj-stat b { display: block; color: var(--ink); font-size: 15px; margin-top: 2px; }
+
+  .pj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .pj-grid { grid-template-columns: 1fr; } }
+  .pj-card {
+    background: var(--card); border: 2px solid var(--line); border-top-width: 4px;
+    padding: 12px 14px; min-width: 0;
+  }
+  .pj-card.wide { grid-column: 1 / -1; }
+  .pj-card h5 {
+    font-size: 10.5px; font-weight: 800; color: var(--faint); letter-spacing: 0.08em;
+    text-transform: uppercase; margin: 0 0 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .pj-body { font-size: 12.5px; color: var(--sub); line-height: 1.65; }
+  .pj-body ul { margin: 0; padding-left: 17px; }
+  .pj-body li { margin-bottom: 4px; }
+  .pj-body code { background: #0d1119; color: #9ad6f0; padding: 1px 4px; font-size: 11.5px; }
+  .pj-empty { color: var(--faint); font-size: 12px; }
+
+  .hot-t { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .hot-t td { padding: 3px 0; color: var(--sub); }
+  .hot-t td:last-child { text-align: right; color: var(--amber); font-weight: 800; }
+  .hot-f { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+
+  .commit-list {
+    font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--sub); line-height: 1.75;
+  }
+  .run-line {
+    display: flex; align-items: center; gap: 8px; padding: 6px 0;
+    border-bottom: 1px solid var(--line); font-size: 12px;
+  }
+  .run-line:last-child { border-bottom: none; }
+  .run-kind {
+    font-size: 9.5px; font-weight: 800; padding: 2px 6px; background: #2a3550; color: #9ec2ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; flex: 0 0 auto;
+  }
+  .run-req { color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-sha {
+    margin-left: auto; font-size: 10px; color: var(--green); flex: 0 0 auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .staff-btn {
+    background: #23324a; color: #cfe0ff; border: 2px solid #3f5a80;
+    padding: 9px 14px; font-size: 13px; font-weight: 800; cursor: pointer;
+    font-family: inherit; white-space: nowrap; box-shadow: 0 3px 0 #0b0f17;
+  }
+  .staff-btn:hover { border-color: var(--indigo); }
+
+  .staff-wrap { display: flex; min-height: 0; flex: 1; }
+  .staff-list {
+    width: 240px; flex: 0 0 auto; border-right: 2px solid var(--line);
+    overflow-y: auto; background: #1b2130; padding: 8px 6px;
+  }
+  .staff-cat {
+    font-size: 9.5px; font-weight: 800; color: var(--faint); letter-spacing: 0.1em;
+    padding: 9px 6px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .staff-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 8px; cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  .staff-row:hover { background: #232a3c; }
+  .staff-row.on { background: #232a44; border-left-color: var(--indigo); }
+  .staff-sw { width: 11px; height: 11px; flex: 0 0 auto; }
+  .staff-nm { font-size: 12.5px; font-weight: 800; }
+  .staff-tag {
+    margin-left: auto; font-size: 8.5px; font-weight: 800; padding: 2px 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .staff-tag.core { background: #3a2f12; color: #ffd166; }
+  .staff-tag.now { background: #14361f; color: var(--green); }
+
+  .staff-view { flex: 1; overflow-y: auto; padding: 18px 22px; min-width: 0; }
+  .staff-hero { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+  .staff-portrait {
+    width: 104px; height: 116px; flex: 0 0 auto; image-rendering: pixelated;
+    border: 2px solid var(--line); background: #0d1119;
+  }
+  .staff-title { font-size: 21px; font-weight: 800; margin-bottom: 4px; }
+  .staff-blurb { font-size: 13px; color: var(--sub); margin-bottom: 10px; }
+  .staff-facts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fact {
+    background: var(--card); border: 2px solid var(--line); padding: 6px 9px;
+    font-size: 10.5px; color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .fact b { color: var(--ink); display: block; font-size: 13px; margin-top: 2px; }
+  .prompt-box {
+    background: #10141d; border: 1px solid #2b3345; padding: 12px 14px;
+    font-size: 12px; line-height: 1.6; color: #cfe0ff; white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-bottom: 10px;
+  }
+  .step-row {
+    display: flex; gap: 10px; align-items: flex-start; padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .step-no {
+    background: var(--indigo); color: #11131c; font-weight: 800; font-size: 11px;
+    width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .step-name { font-size: 12.5px; font-weight: 800; margin-bottom: 3px; }
+  .step-text {
+    font-size: 11.5px; color: var(--faint); white-space: pre-wrap; line-height: 1.55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .docs-btn {
+    background: #2c344a; color: var(--ink); border: 2px solid #4a5570;
+    padding: 9px 14px; font-size: 13px; font-weight: 800; cursor: pointer;
+    font-family: inherit; white-space: nowrap; box-shadow: 0 3px 0 #0b0f17;
+  }
+  .docs-btn:hover { border-color: var(--indigo); }
+  .docs-wrap { display: flex; gap: 0; min-height: 0; flex: 1; }
+  .docs-tree {
+    width: 260px; flex: 0 0 auto; border-right: 2px solid var(--line);
+    overflow-y: auto; padding: 10px 8px; background: #1b2130;
+  }
+  .docs-view { flex: 1; overflow-y: auto; padding: 16px 20px; min-width: 0; }
+  .tnode { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .tdir { color: var(--faint); font-weight: 800; padding: 5px 4px 3px; }
+  .tfile {
+    display: block; color: var(--sub); padding: 4px 6px; cursor: pointer;
+    border-left: 2px solid transparent; word-break: break-all;
+  }
+  .tfile:hover { background: #232a3c; color: var(--ink); }
+  .tfile.on { border-left-color: var(--indigo); color: var(--indigo); background: #232a44; }
+  .tsize { color: #55607a; font-size: 9.5px; margin-left: 4px; }
+
+  .md h1 { font-size: 19px; margin: 0 0 12px; }
+  .md h2 { font-size: 15px; margin: 18px 0 8px; color: var(--indigo); }
+  .md h3 { font-size: 13px; margin: 14px 0 6px; color: var(--sub); }
+  .md p { font-size: 13px; color: var(--sub); margin: 0 0 9px; line-height: 1.65; }
+  .md ul, .md ol { font-size: 13px; color: var(--sub); margin: 0 0 9px; padding-left: 20px; line-height: 1.6; }
+  .md li { margin-bottom: 3px; }
+  .md code {
+    background: #0d1119; color: #9ad6f0; padding: 1px 4px; font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .md pre {
+    background: #0d1119; border: 1px solid #2b3345; padding: 10px 12px; overflow-x: auto;
+    font-size: 11.5px; color: var(--sub); margin: 0 0 10px;
+  }
+  .md pre code { background: none; padding: 0; color: inherit; }
+  .md table { border-collapse: collapse; width: 100%; margin: 0 0 12px; font-size: 12px; }
+  .md th, .md td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; color: var(--sub); }
+  .md th { background: #232a3c; color: var(--ink); font-weight: 800; }
+  .md blockquote {
+    border-left: 3px solid var(--amber); padding: 4px 0 4px 12px; margin: 0 0 10px;
+    color: #ffdcae; font-size: 12.5px;
+  }
+  .md strong { color: var(--ink); }
+
+  .modal-hint {
+    font-size: 10px; color: var(--faint); padding: 0 18px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">AI Org · Live</div>
+    <h1>우리 팀 근무 현황</h1>
+  </header>
+
+  <div class="assign-bar">
+    <input id="req-input" type="text" placeholder="예: 할 일 목록 앱 — 추가/완료/삭제만 되는 아주 간단한 버전" />
+    <button id="assign-btn">업무 지시</button>
+    <button id="proj-btn" class="proj-btn">📋 프로젝트</button>
+    <button id="staff-btn" class="staff-btn">👥 직원</button>
+    <button id="stop-btn" class="stop-btn">■ 중단</button>
+    <button id="docs-btn" class="docs-btn">📁 문서</button>
+  </div>
+
+  <div id="need-bar"></div>
+  <div id="ws-bar" class="ws-bar"></div>
+  <div class="ws-bar"><span>실행 이력</span><select id="run-pick" class="run-pick"></select><span id="hist-note" class="hist-note"></span></div>
+  <div id="current-task-box"></div>
+
+  <div class="office-frame">
+    <canvas id="office" width="500" height="264"></canvas>
+    <div id="overlay" class="overlay"></div>
+  </div>
+  <div class="legend">
+    <span><b>작업실</b> 일하는 중이면 자기 자리에 앉아 있음</span>
+    <span><b>휴게실</b> 대기·완료·실패는 라꾸라꾸에 누워 있음</span>
+    <span>캐릭터 클릭 → 상세</span>
+  </div>
+
+  <div id="pipeline" class="pipeline"></div>
+  <div id="cards" class="cards"></div>
+
+  <div id="detail-box"></div>
+  <div id="docs-box"></div>
+  <div id="staff-box"></div>
+  <div id="brief-box"></div>
+  <div id="proj-box"></div>
+</div>
+
+<script>
+  const ROLE_COLORS = {
+    ceo: '#f0d24a', pm: '#6d7ff0', planner: '#a87bf0',
+    researcher: '#7be0d0', designer: '#f06ba8',
+    lead: '#e0645c', architect: '#e08a3c',
+    fe: '#4aa8f0', be: '#3dc9a8', mobile: '#8ad46a',
+    data: '#c98cf0', ml: '#f08ac9', devops: '#6ac9e0',
+    security: '#d95f5f', qa: '#f0a23d', writer: '#9fb3c8',
+  };
+  const ROLE_INITIALS = {
+    ceo: '사장', pm: 'PM', planner: '기획', researcher: '리서',
+    designer: '디자', lead: '리드', architect: '아키', fe: 'FE', be: 'BE',
+    mobile: '모바', data: '데이', ml: 'ML', devops: 'Ops',
+    security: '보안', qa: 'QA', writer: '문서',
+  };
+  const LOOKS = {
+    ceo: { hair: '#5a5a5a', hi: '#7c7c7c', style: 5 },
+    pm: { hair: '#3a2a1c', hi: '#54402c', style: 0 },
+    planner: { hair: '#7b4a2a', hi: '#96603a', style: 1 },
+    researcher: { hair: '#2e4a3a', hi: '#456b55', style: 2 },
+    designer: { hair: '#c9a227', hi: '#e3bc45', style: 2 },
+    lead: { hair: '#2e2620', hi: '#463a30', style: 5 },
+    architect: { hair: '#4a3520', hi: '#66492c', style: 0 },
+    fe: { hair: '#151515', hi: '#2e2e2e', style: 4 },
+    be: { hair: '#221a12', hi: '#3a2e22', style: 0 },
+    mobile: { hair: '#3f5a2a', hi: '#557a3a', style: 1 },
+    data: { hair: '#402a4a', hi: '#5a3e66', style: 2 },
+    ml: { hair: '#5a2a40', hi: '#7a3a57', style: 1 },
+    devops: { hair: '#1f3a44', hi: '#2f555f', style: 4 },
+    security: { hair: '#1a1a1a', hi: '#333', style: 4 },
+    qa: { hair: '#8b3a2f', hi: '#a8503f', style: 5 },
+    writer: { hair: '#6a6a55', hi: '#8a8a70', style: 0 },
+  };
+  const FALLBACK_LOOK = { hair: '#3a2a1c', hi: '#54402c', style: 0 };
+  const ROLE_LOOK = {
+    ceo: { hat: null, back: 'suit' },
+    pm: { hat: null, back: 'suspenders' },
+    planner: { hat: null, back: 'cardigan' },
+    researcher: { hat: null, back: 'cardigan' },
+    designer: { hat: 'beret', back: 'apron' },
+    lead: { hat: null, back: 'vest' },
+    architect: { hat: null, back: 'vest' },
+    fe: { hat: 'hood', back: 'hoodie' },
+    be: { hat: 'cap', back: 'plaid' },
+    mobile: { hat: 'cap', back: 'hoodie' },
+    data: { hat: null, back: 'plaid' },
+    ml: { hat: null, back: 'coat' },
+    devops: { hat: 'cap', back: 'plaid' },
+    security: { hat: 'cap', back: 'coat' },
+    qa: { hat: null, back: 'coat' },
+    writer: { hat: null, back: 'cardigan' },
+  };
+
+  // 화면 전체가 쓰는 팔레트
+  const C = {
+    wood: '#c9a273', woodHi: '#e2c79c', woodLo: '#a8824f', grain: '#bd9666', leg: '#7d5a32',
+    floor: '#7d5233', floorHi: '#8d5f3c', floorLine: '#66401f',
+    wall: '#2b3245', wallHi: '#39415a', wallLo: '#1b2130', base: '#232a3b',
+    lounge: '#3d6d96', loungeHi: '#4a7ca8', loungeLine: '#34608a',
+    skin: '#f0c9a0', skinSh: '#d5a87f',
+    chair: '#5b8f45', chairHi: '#74a85c', chairLo: '#3d6a2e',
+    shell: '#e6e9ef', shellSh: '#aeb5c1', bezel: '#cbd2dc',
+    screenOn: '#14301e', screenOff: '#333c4a', code: '#7ef0a8',
+    sheet: '#f4f2ea', sheetSh: '#d8d5c9',
+  };
+
+  const W = 500, H = 264;
+  // 자리는 고용된 인원수에 맞춰 만든다
+  function layout(n) {
+    const deskCols = n <= 4 ? 2 : 3;
+    const deskRows = Math.ceil(n / deskCols);
+    const cotCols = n <= 4 ? 1 : 2;
+    const cotRows = Math.ceil(n / cotCols);
+    const deskW = 76, deskH = Math.min(56, Math.max(40, Math.floor(208 / deskRows)));
+    const cotH = Math.min(50, Math.max(34, Math.floor(208 / cotRows)));
+    const desks = [];
+    const cots = [];
+    for (let i = 0; i < n; i++) {
+      desks.push({ x: 16 + (i % deskCols) * (deskW + 24), y: 56 + Math.floor(i / deskCols) * deskH });
+      cots.push({ x: 350 + (i % cotCols) * 60, y: 54 + Math.floor(i / cotCols) * cotH });
+    }
+    return { desks, cots };
+  }
+
+  let selectedRole = null;
+  let latestState = null;
+  let frameTick = 0;
+  let agentBoxes = {};
+
+  const canvas = document.getElementById('office');
+  const overlayEl = document.getElementById('overlay');
+  const wsBarEl = document.getElementById('ws-bar');
+  const needBarEl = document.getElementById('need-bar');
+  const currentTaskEl = document.getElementById('current-task-box');
+  const detailEl = document.getElementById('detail-box');
+  const pipelineEl = document.getElementById('pipeline');
+  const cardsEl = document.getElementById('cards');
+
+  const es = new EventSource('/events');
+  es.onmessage = (e) => { latestState = JSON.parse(e.data); render(); };
+
+  setInterval(() => { frameTick++; drawOffice(); }, 70);
+  setInterval(() => { if (latestState && !viewingRunId) renderBoard(latestState); }, 1000);
+  setInterval(refreshRunList, 5000);
+  refreshRunList();
+
+  const docsEl = document.getElementById('docs-box');
+  let docsOpen = false;
+  let docsTree = null;
+  let docsCurrent = null;
+
+  const stopBtn = document.getElementById('stop-btn');
+  const runPick = document.getElementById('run-pick');
+  const histNote = document.getElementById('hist-note');
+  let viewingRunId = null;   // null = live
+
+  stopBtn.addEventListener('click', async () => {
+    stopBtn.disabled = true;
+    try {
+      const r = await (await fetch('/api/cancel', { method: 'POST' })).json();
+      histNote.textContent = r.cancelling ? '중단 요청됨 — 진행 중인 단계가 끝나면 멈춥니다' : '중단할 작업이 없습니다';
+    } finally { setTimeout(() => { stopBtn.disabled = false; }, 1500); }
+  });
+
+  runPick.addEventListener('change', async () => {
+    const v = runPick.value;
+    if (!v) { viewingRunId = null; histNote.textContent = ''; render(); return; }
+    viewingRunId = Number(v);
+    const data = await (await fetch('/api/run?id=' + viewingRunId)).json();
+    histNote.textContent = '과거 실행 보는 중 — 최신으로 돌아가려면 "현재 실행" 선택';
+    renderHistorical(data);
+  });
+
+  async function refreshRunList() {
+    try {
+      const runs = await (await fetch('/api/runs')).json();
+      const cur = runPick.value;
+      runPick.innerHTML = '<option value="">현재 실행</option>' + runs.map((r) =>
+        `<option value="${r.id}">#${r.id} · ${escapeHtml(r.requirement.slice(0, 32))} · ${r.status}</option>`
+      ).join('');
+      if (cur) runPick.value = cur;
+    } catch { /* list is a convenience */ }
+  }
+
+  // a past run has no live office; show its board only
+  function renderHistorical(data) {
+    const byKey = Object.fromEntries(data.stages.map((s) => [s.role_key, s]));
+    const employees = (latestState ? latestState.employees : []).map((e) => {
+      const st = byKey[e.key];
+      return {
+        ...e,
+        status: st ? st.status : 'idle',
+        startedAt: st ? st.started_at : null,
+        completedAt: st ? st.completed_at : null,
+        currentOutput: st ? st.output : null,
+        currentCost: st ? st.cost_usd : null,
+        attempt: st ? st.attempt : 0,
+        stepIndex: st ? st.step_index : null,
+        stepTotal: st ? st.step_total : null,
+        artifact: st && st.artifact_path ? st.artifact_path.split('/').pop() : null,
+        artifactPath: st ? st.artifact_path : null,
+        currentTokens: st && st.status === 'done' ? {
+          input: st.tokens_input, output: st.tokens_output,
+          cacheRead: st.tokens_cache_read, cacheCreation: st.tokens_cache_creation,
+        } : null,
+      };
+    });
+    const snapshot = { ...latestState, task: data.task, stages: data.stages, employees };
+    renderCurrentTask(snapshot);
+    renderBoard(snapshot);
+  }
+
+  const staffEl = document.getElementById('staff-box');
+  let staffOpen = false;
+  let catalog = null;
+  let staffPick = null;
+
+  const projEl = document.getElementById('proj-box');
+  let projOpen = false;
+
+  document.getElementById('proj-btn').addEventListener('click', openProject);
+  document.getElementById('staff-btn').addEventListener('click', openStaff);
+  document.getElementById('docs-btn').addEventListener('click', openDocs);
+  document.getElementById('assign-btn').addEventListener('click', submitTask);
+  document.getElementById('req-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitTask();
+  });
+
+  const briefEl = document.getElementById('brief-box');
+
+  /** 바로 시키지 않는다 — 어떤 팀으로 할지 먼저 보여주고 승인받는다 */
+  async function submitTask() {
+    const input = document.getElementById('req-input');
+    const requirement = input.value.trim();
+    if (!requirement) return;
+    const btn = document.getElementById('assign-btn');
+    btn.disabled = true;
+
+    renderBriefLoading(requirement);
+    try {
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirement }),
+      });
+      if (!res.ok) throw new Error(`서버가 ${res.status} 응답`);
+      renderBrief(await res.json());
+    } catch (err) {
+      briefEl.innerHTML = '';
+      showError('팀을 꾸리지 못했습니다', err.message);
+    } finally { btn.disabled = false; }
+  }
+
+  function closeBrief() { briefEl.innerHTML = ''; }
+
+  function renderBriefLoading(requirement) {
+    briefEl.innerHTML = `
+      <div class="modal-back" id="brief-back">
+        <div class="modal" style="width:min(760px,100%)">
+          <div class="modal-head"><span class="modal-title">팀 꾸리는 중…</span></div>
+          <div class="modal-body">
+            <div class="brief-req">${escapeHtml(requirement)}</div>
+            <div class="brief-loading">이 일에 필요한 직무와 인원을 정하고 있습니다<span class="dots"><i>.</i><i>.</i><i>.</i></span></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderBrief(plan) {
+    const cards = plan.team.map((m, i) => `
+      <div class="hire" style="border-top-color:${ROLE_COLORS[m.key] || '#8b7bff'}">
+        <canvas id="hire-${i}" width="46" height="52"></canvas>
+        <div style="min-width:0">
+          <div class="hire-name" style="color:${ROLE_COLORS[m.key] || '#8b7bff'}">${escapeHtml(m.title)}</div>
+          <div class="hire-scope">${escapeHtml(m.assignment !== '전체' ? m.assignment : m.blurb)}</div>
+          ${m.reviewedBy.length ? `<div class="hire-extra">검토 <b>${m.reviewedBy.map(escapeHtml).join(', ')}</b></div>` : ''}
+          ${m.hiredBecause ? `<div class="hire-extra">${escapeHtml(m.hiredBecause)} 보강</div>` : ''}
+        </div>
+      </div>`).join('');
+
+    const waves = plan.waves.map((w, i) => `
+      <div class="wave-row">
+        <span class="wave-no">${i + 1}차</span>
+        ${w.map((n) => `<span class="wave-chip">${escapeHtml(n)}</span>`).join('<span class="wave-plus">+</span>')}
+      </div>`).join('');
+
+    briefEl.innerHTML = `
+      <div class="modal-back" id="brief-back">
+        <div class="modal" style="width:min(860px,100%);max-height:88vh">
+          <div class="modal-head">
+            <span class="modal-title">이 팀으로 진행합니다</span>
+            <span class="ac-state done" style="border-color:#47526e;color:var(--faint)">${plan.team.length}명</span>
+            <button class="modal-x" id="brief-x">✕ 취소</button>
+          </div>
+          <div class="modal-body">
+            <div class="brief-req">${escapeHtml(plan.requirement)}</div>
+            ${plan.kindLabel ? `<div class="kind-tag">${escapeHtml(plan.kindLabel)} · ${escapeHtml(plan.kindNote)}</div>` : ''}
+            <div class="brief-why">${escapeHtml(plan.reason)}</div>
+
+            ${(plan.warnings || []).length ? `<div class="warn-box">
+              <b>코드를 repo 에 남길 수 없습니다</b><br>
+              ${plan.warnings.map(escapeHtml).join('<br>')}<br>
+              <span style="color:var(--faint)">그래도 진행하면 문서와 산출물 기록만 남습니다.</span>
+            </div>` : ''}
+
+            ${(plan.repos || []).length ? `<h4>작업할 repo</h4>
+              ${plan.repos.map((r) => `<div class="repo-row">
+                <span class="repo-name">${escapeHtml(r.name)}</span>
+                <span class="repo-branch">${escapeHtml(r.branch || '—')}</span>
+                ${r.dirty ? '<span class="repo-dirty">⚠ 커밋 안 된 변경</span>' : '<span class="repo-clean">깨끗함</span>'}
+              </div>`).join('')}
+              <p style="font-size:11px;color:var(--faint);margin:6px 0 14px">
+                코드는 <code>agent-org/&lt;작업명&gt;</code> 새 브랜치에 커밋됩니다. 현재 브랜치는 건드리지 않고, push 도 하지 않습니다.
+              </p>` : '<h4>작업할 repo</h4><p style="font-size:12px;color:var(--faint);margin-bottom:14px">git repo 가 없어 코드는 기록 폴더에만 남습니다.</p>'}
+
+            <h4>투입 인원</h4>
+            <div class="brief-grid">${cards}</div>
+
+            <h4>일하는 순서 <span style="color:var(--faint);font-weight:400">(같은 줄은 동시에)</span></h4>
+            ${waves}
+          </div>
+          <div class="brief-foot">
+            <button class="btn-go" id="brief-go">이 팀으로 시작</button>
+            <button class="btn-cancel" id="brief-cancel">취소</button>
+            <span class="brief-note">편성 비용 $${Number(plan.cost || 0).toFixed(3)} · 시작하면 순서대로 일합니다</span>
+          </div>
+        </div>
+      </div>`;
+
+    plan.team.forEach((m, i) => drawPortraitOn(`hire-${i}`, m.key));
+
+    document.getElementById('brief-x').addEventListener('click', closeBrief);
+    document.getElementById('brief-cancel').addEventListener('click', closeBrief);
+    document.getElementById('brief-back').addEventListener('click', (e) => {
+      if (e.target.id === 'brief-back') closeBrief();
+    });
+    document.getElementById('brief-go').addEventListener('click', async () => {
+      const go = document.getElementById('brief-go');
+      go.disabled = true;
+      go.textContent = '시작하는 중…';
+      try {
+        await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requirement: plan.requirement }),
+        });
+        document.getElementById('req-input').value = '';
+        closeBrief();
+      } catch (err) {
+        closeBrief();
+        showError('시작하지 못했습니다', err.message);
+      }
+    });
+  }
+
+  // ================= pixel office =================
+
+  function drawOffice() {
+    if (!latestState) return;
+    const ctx = canvas.getContext('2d');
+    const p = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    const t = frameTick;
+    const emps = latestState.employees;
+
+    p(0, 0, W, H, '#0f131b');
+    drawWorkRoom(p);
+    drawLounge(p);
+
+    drawVignette(p);
+    agentBoxes = {};
+    const seats = layout(emps.length);
+    emps.forEach((emp, i) => {
+      const working = emp.status === 'running';
+      const look = LOOKS[emp.roleKey] || FALLBACK_LOOK;
+      const role = ROLE_COLORS[emp.label] || '#8b7bff';
+      const d = seats.desks[i], b = seats.cots[i];
+      if (!d || !b) return;
+
+      drawDesk(p, d.x, d.y, working, t, emp.roleKey);
+      if (working) {
+        // warm bounce light from the screen
+        lightPool(p, d.x + 37, d.y + 20, 40, 18, '255,214,120');
+        dither(p, d.x + 20, d.y + 14, 36, 10, 'rgba(255,220,140,0.20)', 2);
+      }
+      if (working) {
+        drawWorker(p, d.x + 27, d.y + 26, look, role, emp.roleKey, t);
+        agentBoxes[emp.key] = { x: d.x + 16, y: d.y + 18, w: 44, h: 46, side: 'right' };
+      }
+
+      drawCotBase(p, b.x, b.y);
+      if (!working) drawSleeper(p, b.x, b.y, look, role, emp.roleKey, t);
+      drawBlanket(p, b.x, b.y, !working);
+      if (!working) {
+        drawSleeperArms(p, b.x, b.y, role);
+        if (emp.status === 'idle' || emp.status === 'pending') {
+          drawFloatZ(p, b.x + 38, b.y - 2, t);
+        }
+        if (emp.status === 'done') drawCheck(p, b.x + 38, b.y - 4, '#3ddc84');
+        if (emp.status === 'failed') drawBang(p, b.x + 41, b.y - 6, '#ff6a5e');
+        if (emp.status === 'blocked') drawBang(p, b.x + 41, b.y - 6, '#8a93a5');
+        agentBoxes[emp.key] = { x: b.x, y: b.y - 8, w: 48, h: 42, side: b.x < 380 ? 'left' : 'right' };
+      }
+    });
+  }
+
+  // ---- rooms ----
+
+  function drawVignette(p) {
+    for (let i = 0; i < 10; i++) {
+      const a = `rgba(4,7,12,${0.05 + i * 0.012})`;
+      p(0, i, W, 1, a); p(0, H - 1 - i, W, 1, a);
+      p(i, 0, 1, H, a); p(W - 1 - i, 0, 1, H, a);
+    }
+  }
+
+  function drawWorkRoom(p) {
+    // wall
+    p(8, 8, 296, 36, C.wall);
+    dither(p, 8, 8, 296, 14, 'rgba(255,255,255,0.05)', 2);
+    dither(p, 8, 30, 296, 8, 'rgba(0,0,0,0.16)', 2);
+    p(8, 8, 296, 3, C.wallHi);
+    p(8, 38, 296, 3, C.base);
+    p(8, 41, 296, 3, C.wallLo);
+    // wood floor, staggered planks
+    p(8, 44, 296, 212, C.floor);
+    for (let r = 0, y = 44; y < 256; y += 14, r++) {
+      p(8, y, 296, 2, C.floorHi);
+      p(8, y + 13, 296, 1, C.floorLine);
+      const off = r % 2 ? 24 : 0;
+      for (let x = 8 + off; x < 304; x += 48) p(x, y, 1, 13, C.floorLine);
+    }
+    // ceiling lamps, each dropping a pool of light on the floor
+    [54, 154, 254].forEach((lx) => {
+      p(lx - 10, 8, 20, 3, '#3c465e');
+      p(lx - 7, 11, 14, 3, '#e8e2c8');
+      p(lx - 5, 14, 10, 1, 'rgba(255,240,190,0.55)');
+    });
+    [56, 112, 168].forEach((ry, ri) => {
+      [54, 154, 254].forEach((lx) => lightPool(p, lx, ry + 30, 44, 26, '255,232,170'));
+    });
+    drawBookshelf(p, 22, 13);
+    drawBookshelf(p, 130, 13);
+    drawBookshelf(p, 238, 13);
+    drawClock(p, 100, 24);
+    drawPlant(p, 276, 228);
+    drawBin(p, 120, 232);
+    drawCooler(p, 278, 48);
+  }
+
+  function drawLounge(p) {
+    p(316, 8, 180, 36, C.wall);
+    dither(p, 316, 8, 180, 14, 'rgba(255,255,255,0.05)', 2);
+    dither(p, 316, 30, 180, 8, 'rgba(0,0,0,0.16)', 2);
+    p(316, 8, 180, 3, C.wallHi);
+    p(316, 38, 180, 3, C.base);
+    p(316, 41, 180, 3, C.wallLo);
+    p(316, 44, 180, 212, C.lounge);
+    for (let y = 44; y < 256; y += 16) {
+      p(316, y, 180, 1, C.loungeHi);
+      p(316, y + 15, 180, 1, C.loungeLine);
+    }
+    // checkerboard strip near the door
+    for (let x = 316; x < 496; x += 8) {
+      for (let y = 240; y < 256; y += 8) {
+        const on = ((x / 8) + (y / 8)) % 2 === 0;
+        p(x, y, 8, 8, on ? '#e8ecf2' : '#232a3b');
+      }
+    }
+    lightPool(p, 406, 120, 74, 90, '150,200,255');
+    dither(p, 316, 44, 180, 30, 'rgba(255,255,255,0.05)', 4);
+    drawArt(p, 350, 14, '#c9a227', '#7a5f12');
+    drawArt(p, 396, 14, '#7fb069', '#3f6b30');
+    drawArt(p, 442, 14, '#c96f6f', '#7d3a3a');
+    drawPlant(p, 470, 226);
+  }
+
+  function drawBookshelf(p, x, y) {
+    p(x, y, 50, 24, '#6d4520');
+    p(x, y, 50, 2, '#8b5a2b');
+    p(x + 1, y + 2, 48, 9, '#4e3117');
+    p(x + 1, y + 13, 48, 9, '#4e3117');
+    const books = ['#d94f4f', '#e2c044', '#5b9bd5', '#7fb069', '#b07fd5', '#e08a3c', '#4fc3d9'];
+    for (let shelf = 0; shelf < 2; shelf++) {
+      const by = y + 2 + shelf * 11;
+      let bx = x + 2;
+      let k = shelf * 3;
+      while (bx < x + 47) {
+        const w = 2 + (k % 3);
+        const h = 7 + (k % 3);
+        p(bx, by + (9 - h), w, h, books[k % books.length]);
+        p(bx, by + (9 - h), w, 1, '#ffffff33');
+        bx += w + 1;
+        k++;
+      }
+    }
+    p(x, y + 24, 50, 2, '#3a2412');
+  }
+
+  function drawClock(p, cx, cy) {
+    disc(p, cx, cy, 9, '#1d2231');
+    disc(p, cx, cy, 8, '#c0392b');
+    disc(p, cx, cy, 6, '#f4f6fa');
+    p(cx - 1, cy - 7, 2, 1, '#8a93a5');
+    p(cx - 1, cy + 6, 2, 1, '#8a93a5');
+    p(cx - 7, cy - 1, 1, 2, '#8a93a5');
+    p(cx + 6, cy - 1, 1, 2, '#8a93a5');
+    p(cx, cy - 4, 1, 4, '#2b3140');
+    p(cx, cy, 4, 1, '#5c6578');
+    p(cx, cy, 1, 1, '#1d2231');
+  }
+
+  function drawArt(p, x, y, inner, shade) {
+    p(x, y, 20, 18, '#8b5a2b');
+    p(x, y, 20, 2, '#a8703a');
+    p(x + 2, y + 2, 16, 14, inner);
+    p(x + 2, y + 10, 16, 6, shade);
+    p(x + 5, y + 5, 4, 4, '#ffffff66');
+    p(x + 2, y + 16, 16, 2, '#00000033');
+  }
+
+  function drawPlant(p, x, y) {
+    // pot
+    p(x + 4, y + 16, 14, 12, '#b5651d');
+    p(x + 4, y + 16, 14, 3, '#d07c2c');
+    p(x + 4, y + 25, 14, 3, '#8a4a14');
+    p(x + 6, y + 19, 10, 2, '#3a2a12');
+    // leaves
+    p(x + 9, y + 6, 4, 11, '#2f7d32');
+    p(x + 2, y + 9, 7, 4, '#3f9a42');
+    p(x + 1, y + 12, 5, 3, '#2f7d32');
+    p(x + 13, y + 7, 7, 4, '#4caf50');
+    p(x + 15, y + 11, 5, 3, '#3f9a42');
+    p(x + 8, y + 1, 5, 6, '#4caf50');
+    p(x + 10, y + 2, 2, 4, '#6fcf73');
+  }
+
+  function drawBin(p, x, y) {
+    p(x, y + 3, 12, 14, '#5a6272');
+    p(x, y + 3, 12, 2, '#79839a');
+    p(x + 3, y + 6, 1, 9, '#4a5160');
+    p(x + 7, y + 6, 1, 9, '#4a5160');
+    p(x - 1, y, 14, 3, '#79839a');
+  }
+
+  function drawCooler(p, x, y) {
+    p(x + 2, y + 8, 14, 22, '#c8d2de');
+    p(x + 2, y + 8, 14, 2, '#e6ecf3');
+    p(x + 4, y, 10, 9, '#6fb7dd');
+    p(x + 5, y + 1, 8, 7, '#9ad6f0');
+    p(x + 5, y + 14, 8, 4, '#8a93a5');
+    p(x + 2, y + 26, 14, 4, '#98a3b3');
+  }
+
+  // ---- desk ----
+
+  function drawDesk(p, x, y, working, t, roleKey) {
+    const blink = Math.floor(t / 4) % 2;
+    p(x + 2, y + 26, 76, 3, '#00000026');
+    p(x, y, 76, 22, C.wood);
+    p(x, y, 76, 2, C.woodHi);
+    p(x, y + 20, 76, 2, C.woodLo);
+    for (let i = 0; i < 3; i++) p(x + 5, y + 6 + i * 5, 66, 1, C.grain);
+    p(x, y + 22, 76, 4, '#9b7746');
+    p(x + 4, y + 26, 5, 7, C.leg);
+    p(x + 67, y + 26, 5, 7, C.leg);
+
+    drawMonitor(p, x + 24, y + 1, working, t);
+    p(x + 24, y + 16, 22, 5, '#b9c0cb');
+    p(x + 24, y + 16, 22, 1, '#d7dce4');
+    for (let k = 0; k < 7; k++) {
+      const lit = working && (Math.floor(t / 3) + k) % 7 === 0;
+      p(x + 26 + k * 3, y + 18, 2, 1, lit ? '#ffd23d' : '#78808f');
+    }
+    p(x + 48, y + 17, 5, 4, '#cdd3dc');
+    p(x + 50, y + 18, 1, 2, '#8a93a5');
+
+    drawRoleProps(p, x, y, roleKey, working, t, blink);
+  }
+
+  // each desk is dressed for the job it belongs to
+  function drawRoleProps(p, x, y, roleKey, working, t, blink) {
+    switch (roleKey) {
+      case 'pm': { // clipboard, gantt-ish chart, coffee
+        p(x + 4, y + 4, 13, 16, '#b07a3c');
+        p(x + 5, y + 5, 11, 14, C.sheet);
+        p(x + 8, y + 3, 5, 3, '#8a93a5');
+        for (let i = 0; i < 4; i++) {
+          p(x + 6, y + 8 + i * 3, 2, 2, '#d94f4f');
+          p(x + 9, y + 8 + i * 3, 2 + i, 2, '#5b9bd5');
+        }
+        drawMug(p, x + 60, y + 9, working, blink);
+        break;
+      }
+      case 'planner': { // stacked specs, sticky notes, pen
+        p(x + 5, y + 10, 14, 10, C.sheetSh);
+        p(x + 4, y + 7, 14, 10, C.sheet);
+        for (let i = 0; i < 3; i++) p(x + 6, y + 9 + i * 3, 10, 1, '#a9a599');
+        p(x + 56, y + 3, 8, 8, '#ffe066');
+        p(x + 56, y + 3, 8, 1, '#fff3a8');
+        p(x + 64, y + 6, 7, 7, '#ff9de0');
+        p(x + 58, y + 14, 12, 2, '#3a4252');
+        p(x + 68, y + 14, 3, 2, '#d94f4f');
+        break;
+      }
+      case 'designer': { // drawing tablet, stylus, colour swatches
+        p(x + 3, y + 5, 18, 14, '#3a4252');
+        p(x + 4, y + 6, 16, 12, '#586275');
+        p(x + 6, y + 8, 12, 8, working ? '#f06ba8' : '#6b7486');
+        if (working) { p(x + 7, y + 10 + (blink ? 0 : 1), 6, 1, '#ffd6ea'); p(x + 11, y + 13, 5, 1, '#ffd6ea'); }
+        p(x + 21, y + 3, 2, 12, '#c9ced8');
+        p(x + 21, y + 14, 2, 3, '#3a4252');
+        const sw = ['#d94f4f', '#e2c044', '#5b9bd5', '#7fb069', '#b07fd5'];
+        sw.forEach((c, i) => p(x + 56 + i * 3, y + 6, 3, 6, c));
+        p(x + 56, y + 13, 15, 1, '#8a7a5c');
+        break;
+      }
+      case 'fe': { // laptop, headphones, energy drink
+        p(x + 3, y + 8, 17, 11, '#c9ced8');
+        p(x + 4, y + 9, 15, 9, '#2b3245');
+        if (working) {
+          p(x + 5, y + 10 + (blink ? 0 : 1), 7, 1, '#7ef0a8');
+          p(x + 5, y + 13, 10, 1, '#4fd0e0');
+          p(x + 5, y + 15, 5, 1, '#7ef0a8');
+        }
+        p(x + 3, y + 19, 17, 2, '#aeb5c1');
+        p(x + 56, y + 4, 3, 10, '#2b3245');   // headphones
+        p(x + 68, y + 4, 3, 10, '#2b3245');
+        p(x + 56, y + 2, 15, 3, '#3a4252');
+        p(x + 55, y + 8, 5, 5, '#4aa8f0');
+        p(x + 67, y + 8, 5, 5, '#4aa8f0');
+        p(x + 62, y + 14, 5, 7, '#7fb069'); // can
+        p(x + 62, y + 14, 5, 2, '#a8d98a');
+        break;
+      }
+      case 'be': { // mini server rack, terminal readout, cables
+        p(x + 3, y + 2, 15, 18, '#2b3245');
+        p(x + 4, y + 3, 13, 16, '#3a4252');
+        for (let i = 0; i < 4; i++) {
+          p(x + 5, y + 4 + i * 4, 11, 3, '#232a38');
+          const on = working && (Math.floor(t / 4) + i) % 4 === 0;
+          p(x + 6, y + 5 + i * 4, 1, 1, on ? '#7ef0a8' : '#2f7d4f');
+          p(x + 8, y + 5 + i * 4, 1, 1, i % 2 ? '#ffb14a' : '#3a4252');
+        }
+        p(x + 18, y + 16, 6, 1, '#4a5362');
+        p(x + 20, y + 17, 8, 1, '#4a5362');
+        drawMug(p, x + 62, y + 10, working, blink);
+        break;
+      }
+      case 'lead': { // architecture board: boxes wired together + schema doc
+        p(x + 3, y + 3, 20, 17, '#e8ecf2');
+        p(x + 3, y + 3, 20, 2, '#b9c0cb');
+        p(x + 5, y + 7, 6, 4, '#4aa8f0');
+        p(x + 15, y + 7, 6, 4, '#3dc9a8');
+        p(x + 10, y + 16, 7, 4, '#e0645c');
+        p(x + 11, y + 9, 4, 1, '#3a4252');
+        p(x + 8, y + 11, 1, 5, '#3a4252');
+        p(x + 17, y + 11, 1, 5, '#3a4252');
+        p(x + 9, y + 16, 2, 1, '#3a4252');
+        p(x + 16, y + 16, 2, 1, '#3a4252');
+        p(x + 56, y + 5, 14, 14, C.sheet);
+        for (let i = 0; i < 4; i++) p(x + 58, y + 8 + i * 3, 10, 1, '#a9a599');
+        p(x + 58, y + 5, 10, 2, '#e0645c');
+        break;
+      }
+      case 'qa': { // checklist with pass/fail marks, magnifier, red pen
+        p(x + 4, y + 4, 14, 16, C.sheet);
+        p(x + 4, y + 4, 14, 2, '#d8d5c9');
+        for (let i = 0; i < 4; i++) {
+          p(x + 6, y + 8 + i * 3, 2, 2, i < 3 ? '#2e9e5b' : '#d94f4f');
+          p(x + 9, y + 9 + i * 3, 7, 1, '#a9a599');
+        }
+        disc(p, x + 62, y + 8, 5, '#c9ced8');   // magnifier
+        disc(p, x + 62, y + 8, 3, working ? '#bfe6ff' : '#8a93a5');
+        p(x + 65, y + 11, 5, 5, '#6b4a2a');
+        p(x + 56, y + 16, 10, 2, '#d94f4f');
+        break;
+      }
+      default:
+        drawPapers(p, x + 6, y + 7);
+    }
+  }
+
+  function drawMonitor(p, x, y, working, t) {
+    const f = Math.floor(t / 4) % 2;
+    const scan = Math.floor(t / 2) % 8;
+    p(x - 1, y + 13, 20, 2, '#00000022');
+    p(x, y, 26, 15, C.shell);
+    p(x, y, 26, 2, '#f4f6fa');
+    p(x + 24, y, 2, 15, C.shellSh);
+    p(x, y + 13, 26, 2, C.shellSh);
+    p(x + 2, y + 2, 22, 10, C.bezel);
+    p(x + 3, y + 3, 20, 8, working ? C.screenOn : C.screenOff);
+    if (working) {
+      const r = f ? 0 : 1;
+      p(x + 4, y + 4 + r, 11, 1, C.code);
+      p(x + 4, y + 6, 15, 1, C.code);
+      p(x + 4, y + 8 - r, 8, 1, C.code);
+      p(x + 16, y + 8 - r, 5, 1, '#4fd0e0');
+      p(x + 4, y + 10, 13, 1, '#4fd0e0');
+      p(x + 3, y + 3 + scan, 20, 1, '#ffffff14');
+    } else {
+      p(x + 4, y + 4, 6, 1, '#454f5e');
+      p(x + 4, y + 6, 9, 1, '#3d4654');
+    }
+    p(x + 10, y + 15, 6, 3, C.shellSh);
+    p(x + 7, y + 18, 12, 2, '#9aa3b0');
+  }
+
+  function drawLamp(p, x, y, on) {
+    p(x + 4, y + 16, 8, 3, '#6a7382');
+    p(x + 7, y + 6, 2, 11, '#8a93a5');
+    p(x + 2, y + 1, 11, 6, on ? '#ffd23d' : '#8a93a5');
+    p(x + 2, y + 1, 11, 2, on ? '#ffe98a' : '#a3abb8');
+    if (on) p(x + 3, y + 7, 9, 3, '#ffe06633');
+  }
+
+  function drawMug(p, x, y, hot, f) {
+    p(x, y + 2, 8, 8, '#e8ecf2');
+    p(x, y + 2, 8, 2, '#ffffff');
+    p(x + 1, y + 4, 6, 3, '#6b4a2a');
+    p(x + 8, y + 4, 2, 4, '#c8d0da');
+    if (hot) {
+      p(x + 2, y - 2 - (f ? 1 : 0), 1, 3, '#ffffff55');
+      p(x + 5, y - 4 + (f ? 1 : 0), 1, 3, '#ffffff44');
+    }
+  }
+
+  function drawPapers(p, x, y) {
+    p(x + 1, y + 1, 11, 9, C.sheetSh);
+    p(x, y, 11, 9, C.sheet);
+    for (let i = 0; i < 3; i++) p(x + 2, y + 2 + i * 2, 7, 1, '#a9a599');
+  }
+
+  // ---- characters ----
+
+  function drawWorker(p, cx, cy, look, role, roleKey, t) {
+    const rl = ROLE_LOOK[roleKey] || { hat: null, back: null };
+    const type = Math.floor(t / 3) % 4;          // 4-frame typing cycle
+    const lift = [0, 1, 0, 1][type];
+    const lArm = [0, 1, 1, 0][type];
+    const rArm = [1, 0, 0, 1][type];
+    const breathe = Math.floor(t / 14) % 2;
+    const bob = lift || breathe;
+
+    // chair: padded seat, armrests, gas lift, star base
+    p(cx - 6, cy + 11, 6, 14, C.chairLo);
+    p(cx + 22, cy + 11, 6, 14, C.chairLo);
+    p(cx - 6, cy + 11, 6, 2, C.chairHi);
+    p(cx + 22, cy + 11, 6, 2, C.chairHi);
+    p(cx - 2, cy + 13, 26, 16, C.chair);
+    p(cx - 2, cy + 13, 26, 2, C.chairHi);
+    p(cx - 2, cy + 27, 26, 2, C.chairLo);
+    p(cx + 2, cy + 16, 18, 1, C.chairLo);
+    p(cx + 9, cy + 29, 4, 6, '#454c5a');
+    p(cx + 3, cy + 35, 16, 3, '#3a4150');
+    p(cx + 1, cy + 37, 4, 2, '#2e3440');
+    p(cx + 17, cy + 37, 4, 2, '#2e3440');
+
+    const bodyY = cy + 7 + bob;
+    const dark = shade(role, 0.62);
+
+    // silhouette outline, then torso with light from the monitor
+    p(cx, bodyY - 1, 22, 17, dark);
+    p(cx + 1, bodyY, 20, 15, role);
+    p(cx + 1, bodyY, 20, 2, shade(role, 1.22));
+    p(cx + 17, bodyY, 4, 15, shade(role, 0.82));
+    p(cx + 1, bodyY, 2, 15, shade(role, 1.08));
+
+    // back-of-outfit detail per profession
+    if (rl.back === 'suspenders') {
+      p(cx + 5, bodyY, 2, 15, '#2b3245');
+      p(cx + 15, bodyY, 2, 15, '#2b3245');
+      p(cx + 5, bodyY + 7, 12, 2, '#2b3245');
+      p(cx + 1, bodyY, 20, 2, '#f4f6fa');
+    } else if (rl.back === 'apron') {
+      p(cx + 4, bodyY + 1, 2, 13, '#f4f0e6');
+      p(cx + 16, bodyY + 1, 2, 13, '#f4f0e6');
+      for (let i = 0; i < 7; i++) p(cx + 6 + i, bodyY + 3 + i, 2, 1, '#f4f0e6');
+      for (let i = 0; i < 7; i++) p(cx + 16 - i, bodyY + 3 + i, 2, 1, '#f4f0e6');
+    } else if (rl.back === 'hoodie') {
+      p(cx, bodyY + 1, 22, 6, shade(role, 0.78));   // hood bunched at the neck
+      p(cx + 1, bodyY + 1, 20, 2, shade(role, 0.9));
+      p(cx + 8, bodyY + 7, 2, 6, '#f4f6fa');
+      p(cx + 13, bodyY + 7, 2, 5, '#f4f6fa');
+      p(cx + 1, bodyY + 12, 20, 3, shade(role, 0.86));
+    } else if (rl.back === 'plaid') {
+      for (let i = 0; i < 4; i++) p(cx + 3 + i * 5, bodyY, 1, 15, shade(role, 0.72));
+      for (let j = 0; j < 4; j++) p(cx + 1, bodyY + 2 + j * 4, 20, 1, shade(role, 0.72));
+    } else if (rl.back === 'coat') {
+      p(cx + 10, bodyY, 2, 15, '#c3c9d4');          // coat seam
+      p(cx + 2, bodyY + 10, 5, 4, '#dfe4ec');
+      p(cx + 15, bodyY + 10, 5, 4, '#dfe4ec');
+    } else if (rl.back === 'vest') {
+      p(cx + 1, bodyY, 20, 3, '#f4f6fa');
+      p(cx + 3, bodyY + 3, 16, 12, shade(role, 0.7));
+      p(cx + 3, bodyY + 3, 16, 1, shade(role, 0.85));
+      p(cx + 9, bodyY, 2, 8, '#2b3245');
+      p(cx + 9, bodyY + 8, 4, 3, '#c9ced8');
+    } else if (rl.back === 'suit') {
+      p(cx + 1, bodyY, 20, 15, '#2b3245');
+      p(cx + 1, bodyY, 20, 2, '#3f4a63');
+      p(cx + 8, bodyY, 6, 4, '#f4f6fa');
+      p(cx + 10, bodyY + 3, 2, 7, role);
+    } else if (rl.back === 'cardigan') {
+      p(cx + 10, bodyY, 2, 15, shade(role, 0.75));
+      p(cx + 1, bodyY + 13, 20, 2, shade(role, 0.7));
+    }
+
+    // arms out to the keyboard, alternating on the typing cycle
+    p(cx - 3, cy + 3 + lArm, 6, 13, dark);
+    p(cx + 19, cy + 3 + rArm, 6, 13, dark);
+    p(cx - 2, cy + 3 + lArm, 5, 12, role);
+    p(cx + 19, cy + 3 + rArm, 5, 12, role);
+    p(cx - 2, cy + 1 + lArm, 5, 4, C.skin);
+    p(cx + 19, cy + 1 + rArm, 5, 4, C.skin);
+    p(cx - 2, cy + 1 + lArm, 5, 1, '#ffe0c0');
+    p(cx + 19, cy + 1 + rArm, 5, 1, '#ffe0c0');
+
+    // light from the monitor catches the top of the shoulders
+    p(cx + 1, bodyY, 20, 1, 'rgba(255,226,160,0.5)');
+    dither(p, cx + 1, bodyY + 1, 20, 4, 'rgba(255,214,120,0.16)', 2);
+    dither(p, cx + 1, bodyY + 10, 20, 5, 'rgba(0,0,0,0.18)', 2);
+
+    // head
+    const hx = cx + 4, hy = cy - 5 + bob;
+    p(hx - 1, hy + 1, 16, 15, '#00000033');
+    p(hx, hy + 2, 14, 12, C.skin);
+    p(hx, hy + 12, 14, 2, C.skinSh);
+    p(hx - 1, hy + 6, 2, 4, C.skinSh);
+    p(hx + 13, hy + 6, 2, 4, C.skinSh);
+    drawHair(p, hx, hy, rl.hat && rl.hat !== 'beret' ? { ...look, style: 0 } : look);
+    dither(p, hx, hy, 14, 3, 'rgba(255,226,170,0.28)', 2);   // sheen on the hair
+    dither(p, hx, hy + 9, 14, 4, 'rgba(0,0,0,0.20)', 2);
+    if (rl.hat) drawHat(p, hx, hy, rl.hat, role);
+    p(cx + 5, cy + 7 + bob, 12, 2, C.skinSh);
+  }
+
+  function drawHair(p, hx, hy, look) {
+    const h = look.hair, hi = look.hi, lo = shade(h, 0.7);
+    switch (look.style) {
+      case 0:
+        p(hx, hy, 14, 8, h); p(hx + 2, hy + 1, 6, 2, hi); p(hx, hy + 7, 14, 1, lo);
+        p(hx, hy + 8, 2, 4, h); p(hx + 12, hy + 8, 2, 4, h);
+        break;
+      case 1:
+        p(hx, hy, 14, 8, h); p(hx + 3, hy + 1, 6, 2, hi);
+        p(hx - 2, hy + 6, 4, 17, h); p(hx + 12, hy + 6, 4, 17, h);
+        p(hx - 2, hy + 6, 1, 15, hi); p(hx - 2, hy + 21, 4, 2, lo); p(hx + 12, hy + 21, 4, 2, lo);
+        break;
+      case 2:
+        p(hx, hy, 14, 7, h); p(hx + 3, hy + 1, 5, 2, hi);
+        disc(p, hx + 7, hy - 5, 5, h); disc(p, hx + 6, hy - 6, 2, hi);
+        p(hx + 4, hy - 1, 7, 1, lo);
+        p(hx, hy + 7, 2, 3, h); p(hx + 12, hy + 7, 2, 3, h);
+        break;
+      case 3:
+        disc(p, hx + 7, hy + 3, 10, lo); disc(p, hx + 7, hy + 3, 9, h);
+        disc(p, hx + 4, hy, 3, hi); p(hx, hy + 6, 14, 6, h);
+        break;
+      case 4:
+        p(hx + 1, hy + 1, 12, 5, h); p(hx + 3, hy + 2, 5, 1, hi); p(hx + 1, hy + 6, 12, 1, lo);
+        break;
+      case 5:
+        p(hx, hy, 14, 7, h); p(hx, hy, 5, 10, h); p(hx + 1, hy + 1, 2, 6, hi);
+        p(hx + 12, hy + 7, 2, 3, h); p(hx, hy + 7, 14, 1, lo);
+        break;
+    }
+  }
+
+  function drawHat(p, hx, hy, kind, role) {
+    if (kind === 'beret') {
+      p(hx - 1, hy - 4, 16, 6, '#1f2530');
+      p(hx, hy - 3, 14, 5, '#c0392b');
+      p(hx + 2, hy - 2, 5, 2, '#d9584a');
+      p(hx + 11, hy - 6, 3, 3, '#8f2a20');
+      p(hx - 1, hy + 1, 16, 1, '#8f2a20');
+    } else if (kind === 'hood') {
+      const d = shade(role, 0.62), m = shade(role, 0.8), l = shade(role, 0.95);
+      p(hx - 5, hy - 5, 24, 6, d);      // hood crown
+      p(hx - 5, hy - 5, 6, 20, d);      // left side
+      p(hx + 13, hy - 5, 6, 20, d);     // right side
+      p(hx - 4, hy - 4, 22, 2, l);
+      p(hx - 4, hy + 1, 4, 17, m);
+      p(hx + 14, hy + 1, 4, 17, m);
+      p(hx, hy, 14, 2, '#00000055');    // shadow under the hood opening
+    } else if (kind === 'cap') {
+      p(hx - 1, hy - 3, 16, 6, '#1f2530');
+      p(hx, hy - 2, 14, 5, '#2f4858');
+      p(hx + 1, hy - 1, 5, 2, '#3f5c70');
+      p(hx - 3, hy + 2, 5, 2, '#263a47');
+    }
+  }
+
+  function drawSleeper(p, x, y, look, role, roleKey, t) {
+    const breathe = Math.floor(t / 16) % 2;
+    const hx = x + 17, hy = y + 3;
+    const h = look.hair, hi = look.hi;
+    // hair framing the face (lying face-up)
+    p(hx - 1, hy - 3, 17, 5, h);
+    p(hx + 2, hy - 2, 6, 2, hi);
+    p(hx - 2, hy + 1, 3, 10, h);
+    p(hx + 14, hy + 1, 3, 10, h);
+    if (look.style === 1) { p(hx - 4, hy + 6, 3, 9, h); p(hx + 16, hy + 6, 3, 9, h); }
+    if (look.style === 2) { p(hx + 5, hy - 7, 7, 5, h); p(hx + 6, hy - 6, 3, 2, hi); }
+    if (look.style === 3) { p(hx - 4, hy - 4, 4, 12, h); p(hx + 15, hy - 4, 4, 12, h); p(hx - 1, hy - 5, 17, 3, h); }
+    // face
+    p(hx + 1, hy, 13, 13, C.skin);
+    p(hx + 1, hy + 11, 13, 2, C.skinSh);
+    p(hx + 3, hy + 6, 3, 1, '#3a2a1c');
+    p(hx + 9, hy + 6, 3, 1, '#3a2a1c');
+    p(hx + 6, hy + 9, 3, 1, '#c98d78');
+    p(hx + 1, hy + 7, 2, 2, '#e8a98f');
+    p(hx + 12, hy + 7, 2, 2, '#e8a98f');
+    // shoulders (blanket is drawn over them afterwards)
+    p(x + 10, y + 15 - breathe, 28, 9 + breathe, shade(role, 0.62));
+    p(x + 11, y + 16 - breathe, 26, 8 + breathe, role);
+    p(x + 11, y + 16 - breathe, 26, 2, shade(role, 1.15));
+  }
+
+  // drawn after the blanket so the arms rest on top of it
+  function drawSleeperArms(p, x, y, role) {
+    p(x + 4, y + 21, 6, 8, role);
+    p(x + 38, y + 21, 6, 8, role);
+    p(x + 4, y + 21, 6, 1, shade(role, 1.15));
+    p(x + 38, y + 21, 6, 1, shade(role, 1.15));
+    p(x + 4, y + 27, 6, 4, C.skin);
+    p(x + 38, y + 27, 6, 4, C.skin);
+  }
+
+  // ---- bed ----
+
+  function drawCotBase(p, x, y) {
+    p(x + 3, y + 30, 46, 3, '#00000026');
+    p(x, y, 48, 32, '#8b4a2b');
+    p(x, y, 48, 3, '#a75f38');
+    p(x + 2, y + 3, 44, 27, '#efe9db');
+    p(x + 2, y + 3, 44, 2, '#ffffff');
+    p(x + 11, y + 1, 26, 12, '#ffffff');
+    p(x + 11, y + 11, 26, 2, '#d8d4c8');
+    p(x, y + 32, 4, 5, '#6f3a20');
+    p(x + 44, y + 32, 4, 5, '#6f3a20');
+  }
+
+  function drawBlanket(p, x, y, occupied) {
+    const bl = occupied ? '#4f74c8' : '#8ea4cc';
+    p(x + 2, y + 21, 44, 9, bl);
+    p(x + 2, y + 21, 44, 2, occupied ? '#6d8cd8' : '#a6b8d8');
+    p(x + 2, y + 25, 44, 1, occupied ? '#4263ad' : '#7e94bd');
+    p(x + 2, y + 28, 44, 1, occupied ? '#4263ad' : '#7e94bd');
+  }
+
+  // ---- fx ----
+
+  // three z's drifting up and fading, on a smooth loop
+  function drawFloatZ(p, x, y, t) {
+    for (let i = 0; i < 3; i++) {
+      const phase = ((t + i * 16) % 48) / 48;
+      const zy = y - phase * 22;
+      const zx = x + Math.round(Math.sin(phase * 6.283) * 3) + i;
+      const size = 7 - i;
+      const fade = phase > 0.75 ? '#ffffff44' : (i === 0 ? '#c3d0e0' : '#e2e9f2');
+      drawZ(p, zx, zy, size, fade);
+    }
+  }
+
+  function drawZ(p, x, y, s, c) {
+    const u = Math.max(1, Math.round(s / 4));
+    p(x, y, s, u, c);
+    p(x + s - 2 * u, y + u, u, u, c);
+    p(x + u, y + 2 * u, u, u, c);
+    p(x, y + 3 * u, s, u, c);
+  }
+  function drawCheck(p, x, y, c) {
+    p(x, y + 5, 2, 3, c); p(x + 2, y + 7, 2, 3, c); p(x + 4, y + 5, 2, 3, c);
+    p(x + 6, y + 2, 2, 3, c); p(x + 8, y - 1, 2, 3, c);
+  }
+  function drawBang(p, x, y, c) { p(x, y, 3, 8, c); p(x, y + 10, 3, 3, c); }
+
+  // checkerboard dither: classic way to fake a gradient step in pixel art
+  function dither(p, x, y, w, h, c, density) {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const on = density === 2
+          ? ((dx + dy) % 2 === 0)
+          : density === 4
+            ? ((dx % 2 === 0) && (dy % 2 === 0))
+            : ((dx + dy) % 2 === 0) || (dx % 2 === 0 && dy % 2 === 0);
+        if (on) p(x + dx, y + dy, 1, 1, c);
+      }
+    }
+  }
+
+  // soft pool of light, built from concentric dithered rings
+  function lightPool(p, cx, cy, rx, ry, rgb) {
+    for (let i = 3; i >= 1; i--) {
+      const fx = rx * (i / 3), fy = ry * (i / 3);
+      const alpha = 0.05 + (3 - i) * 0.045;
+      for (let dy = -fy; dy <= fy; dy++) {
+        const span = Math.floor(fx * Math.sqrt(Math.max(0, 1 - (dy * dy) / (fy * fy))));
+        if (span <= 0) continue;
+        const y = Math.round(cy + dy);
+        if (i === 3) dither(p, Math.round(cx - span), y, span * 2, 1, `rgba(${rgb},${alpha + 0.02})`, 2);
+        else p(Math.round(cx - span), y, span * 2, 1, `rgba(${rgb},${alpha})`);
+      }
+    }
+  }
+
+  function disc(p, cx, cy, r, c) {
+    for (let dy = -r; dy <= r; dy++) {
+      const half = Math.floor(Math.sqrt(r * r - dy * dy));
+      p(cx - half, cy + dy, half * 2 + 1, 1, c);
+    }
+  }
+
+  function shade(hex, factor) {
+    const n = parseInt(hex.slice(1), 16);
+    const cl = (v) => Math.max(0, Math.min(255, Math.round(v)));
+    const r = cl(((n >> 16) & 255) * factor);
+    const g = cl(((n >> 8) & 255) * factor);
+    const b = cl((n & 255) * factor);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  // ================= render =================
+
+  function render() {
+    if (!latestState) return;
+    if (viewingRunId) { drawOffice(); return; }   // history view owns the board
+    renderWorkspace(latestState);
+    renderCurrentTask(latestState);
+    drawOffice();
+    renderOverlay(latestState);
+    renderBoard(latestState);
+    renderDetail(latestState);
+  }
+
+  /** 파악이 필요한 상태를 버튼과 상단 띠에 드러낸다 */
+  function renderOnboardingHint(state) {
+    const ob = state.onboarding;
+    const btn = document.getElementById('proj-btn');
+    if (!ob || !btn) return;
+
+    btn.classList.remove('need', 'busy');
+    btn.querySelector('.need-dot')?.remove();
+    needBarEl.innerHTML = '';
+
+    if (ob.running) {
+      btn.classList.add('busy');
+      btn.innerHTML = '📋 프로젝트 <span style="font-size:10px">파악중…</span>';
+      needBarEl.innerHTML = `<div class="need-hint" style="background:#1f2a3a;border-color:#3f5a80;color:#cfe0ff">
+        <span>이 프로젝트의 코드와 git 내력을 훑는 중입니다<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>
+      </div>`;
+      return;
+    }
+
+    btn.innerHTML = '📋 프로젝트';
+    if (!ob.hasCode) return;
+
+    if (!ob.done || ob.stale) {
+      btn.classList.add('need');
+      btn.insertAdjacentHTML('beforeend', '<span class="need-dot"></span>');
+      const first = !ob.done;
+      needBarEl.innerHTML = `<div class="need-hint">
+        <span>${first
+          ? '<b>이 프로젝트를 아직 파악하지 않았습니다.</b> 기존 코드·API·관례를 모른 채로 작업하게 됩니다.'
+          : '<b>파악 이후 코드가 바뀌었습니다.</b> 팀이 낡은 정보로 작업할 수 있습니다.'}</span>
+        <button id="need-go">${first ? '지금 파악하기' : '다시 파악하기'}</button>
+      </div>`;
+      document.getElementById('need-go').addEventListener('click', startOnboarding);
+    }
+  }
+
+  function renderWorkspace(state) {
+    stopBtn.disabled = !state.busy;
+    renderOnboardingHint(state);
+    wsBarEl.innerHTML =
+      `<span>작업 폴더 <b>${escapeHtml(state.workspace || '-')}</b></span>` +
+      (state.runDir ? `<span>산출물 <b>${escapeHtml(state.runDir)}</b></span>` : '') +
+      (state.hireReason ? `<span>편성 <b>${escapeHtml(state.hireReason)}</b></span>` : '') +
+      (state.catalogSize ? `<span>직무 풀 <b>${state.catalogSize}종</b></span>` : '');
+  }
+
+  function renderCurrentTask(state) {
+    const { task, stages, queueLength } = state;
+    if (!task) {
+      currentTaskEl.innerHTML = `<div class="current-task"><div class="empty-task">아직 업무가 없습니다. 위에서 첫 업무를 지시해보세요.</div></div>`;
+      return;
+    }
+    const doneCount = stages.filter((s) => s.status === 'done').length;
+    const totalCost = stages.reduce((sum, s) => sum + (s.cost_usd || 0), 0);
+    currentTaskEl.innerHTML = `
+      <div class="current-task">
+        <div class="req">${escapeHtml(task.requirement)}</div>
+        <div class="meta">
+          <span>TASK #${task.id}</span>
+          <span>상태 <b>${labelForTask(task.status)}</b></span>
+          <span>진행 <b>${doneCount}/${stages.length}</b></span>
+          <span>동시 작업 <b>${stages.filter((s) => s.status === 'running').length}명</b></span>
+          <span>비용 <b>$${totalCost.toFixed(4)}</b></span>
+          ${queueLength > 0 ? `<span>대기 <b>${queueLength}</b></span>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOverlay(state) {
+    let html = '';
+    state.employees.forEach((emp) => {
+      const box = agentBoxes[emp.key];
+      if (!box) return;
+      const sel = selectedRole === emp.key ? ' selected' : '';
+      const style =
+        `left:${(box.x / W) * 100}%;top:${(box.y / H) * 100}%;` +
+        `width:${(box.w / W) * 100}%;height:${(box.h / H) * 100}%;`;
+      const chipCls = box.side === 'left' ? 'chip side-left' : 'chip side-right';
+      html += `<div class="agent-hot ${emp.status}${sel}" data-role="${emp.key}" style="${style}">
+                 <div class="${chipCls}">${emp.label}</div>
+               </div>`;
+    });
+    overlayEl.innerHTML = html;
+    overlayEl.querySelectorAll('.agent-hot').forEach((el) => {
+      el.addEventListener('click', () => {
+        const role = el.dataset.role;
+        selectedRole = selectedRole === role ? null : role;
+        render();
+      });
+    });
+  }
+
+  // group roles into columns by dependency depth, so anything that can run
+  // at the same time lines up in the same column
+  function depthOf(emp, byKey, seen = {}) {
+    if (seen[emp.key] != null) return seen[emp.key];
+    const d = emp.deps && emp.deps.length
+      ? 1 + Math.max(...emp.deps.map((k) => (byKey[k] ? depthOf(byKey[k], byKey, seen) : 0)))
+      : 0;
+    seen[emp.key] = d;
+    return d;
+  }
+
+  function elapsed(from, to) {
+    if (!from) return '';
+    const start = new Date(from.replace(' ', 'T') + 'Z').getTime();
+    const end = to ? new Date(to.replace(' ', 'T') + 'Z').getTime() : Date.now();
+    const sec = Math.max(0, Math.round((end - start) / 1000));
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  }
+
+  // What the agent has actually produced — headings, size, verdict — instead of
+  // dumping raw text that cannot be read in a small box.
+  function summarize(emp) {
+    const raw = emp.currentOutput || '';
+    const lines = raw ? raw.split('\n').length : 0;
+    const kb = raw.length >= 1024 ? (raw.length / 1024).toFixed(1) + 'KB' : raw.length + 'B';
+
+    if (emp.status === 'running') {
+      return { main: raw ? `작성 중 · ${lines}줄 · ${kb}` : '시작하는 중…', sub: '' };
+    }
+    if (emp.status === 'failed') return { main: '오류로 중단됨', sub: '' };
+    if (emp.status === 'blocked') return { main: '선행 작업 실패로 시작 못 함', sub: '' };
+    if (emp.status !== 'done') {
+      return { main: (emp.deps || []).length ? `${emp.deps.join(', ')} 기다리는 중` : '대기 중', sub: '' };
+    }
+
+    // done — say what was produced
+    const verdict = raw.match(/판정:\s*(PASS|FAIL)/);
+    if (verdict) return { main: `판정 ${verdict[1]}`, sub: `${lines}줄 · ${kb}`, verdict: verdict[1] };
+
+    const heads = [...raw.matchAll(/^#{2,3}\s+(.+)$/gm)]
+      .map((m) => m[1].replace(/[`*]/g, '').trim())
+      .filter(Boolean);
+    if (heads.length) {
+      return { main: heads.slice(0, 4).join(' · '), sub: `${heads.length}개 섹션 · ${lines}줄 · ${kb}` };
+    }
+    const fns = (raw.match(/\b(function|const\s+\w+\s*=\s*\(|app\.(get|post|put|delete|patch))/g) || []).length;
+    return { main: fns ? `코드 ${lines}줄 · 정의 ${fns}개` : `${lines}줄 작성`, sub: kb };
+  }
+
+  const REVIEW_KO = {
+    reviewing: '검토중', approved: '승인됨', revising: '보완중',
+    revised: '보완완료', changes_requested: '보완요청',
+  };
+  const STATE_KO = {
+    running: '작업중', done: '완료', failed: '실패',
+    pending: '대기', idle: '대기', blocked: '중단',
+  };
+
+  function renderBoard(state) {
+    const byKey = Object.fromEntries(state.employees.map((e) => [e.key, e]));
+    const seen = {};
+    const cols = {};
+    state.employees.forEach((e) => {
+      const d = depthOf(e, byKey, seen);
+      (cols[d] = cols[d] || []).push(e);
+    });
+    const depths = Object.keys(cols).map(Number).sort((a, b) => a - b);
+
+    // thin strip: who depends on whom, and who is live right now
+    let pipe = '<span class="pipe-title">파이프라인</span>';
+    depths.forEach((d, i) => {
+      if (i > 0) pipe += '<span class="pipe-sep">▶</span>';
+      pipe += '<span class="pipe-group">';
+      cols[d].forEach((emp) => {
+        const sel = selectedRole === emp.key ? ' sel' : '';
+        pipe += `<span class="pipe-chip ${emp.status}${sel}" data-role="${emp.key}">
+                   <span class="pdot"></span>${emp.label}
+                 </span>`;
+      });
+      pipe += '</span>';
+    });
+    pipelineEl.innerHTML = pipe;
+
+    // wide cards: the actual detail
+    let html = '';
+    state.employees.forEach((emp) => {
+      const sel = selectedRole === emp.key ? ' sel' : '';
+      const color = ROLE_COLORS[emp.roleKey] || '#8b7bff';
+      const time = emp.status === 'running'
+        ? elapsed(emp.startedAt)
+        : emp.status === 'done' ? elapsed(emp.startedAt, emp.completedAt) : '';
+
+      const sum = summarize(emp);
+      let stepsHtml = '';
+      if (emp.steps && emp.steps.length) {
+        stepsHtml = '<div class="ac-steps">' + emp.steps.map((label, i) => {
+          let cls = '';
+          if (emp.status === 'done') cls = 'sdone';
+          else if (emp.status === 'running') {
+            if (i < (emp.stepIndex ?? 0)) cls = 'sdone';
+            else if (i === (emp.stepIndex ?? 0)) cls = 'scur';
+          }
+          const mark = cls === 'sdone' ? '✓' : `${i + 1}`;
+          return `<span class="ac-step ${cls}">${mark} ${escapeHtml(label)}</span>`;
+        }).join('') + '</div>';
+      }
+
+      html += `
+        <div class="acard ${emp.status}${sel}" data-role="${emp.key}">
+          <div class="ac-head">
+            <span class="ac-name" style="color:${color}">${emp.label}</span>
+            <span class="ac-state ${emp.status}">${STATE_KO[emp.status] || emp.status}</span>
+            ${sum.verdict ? `<span class="ac-verdict ${sum.verdict}">${sum.verdict}</span>` : ''}
+            ${emp.attempt > 0 ? `<span class="ac-rework">재작업 ${emp.attempt}차</span>` : ''}
+            ${emp.reviewStatus ? `<span class="ac-review ${emp.reviewStatus}">${REVIEW_KO[emp.reviewStatus] || emp.reviewStatus}</span>` : ''}
+            ${emp.assignment && emp.assignment !== '전체' ? `<span class="ac-scope">${escapeHtml(emp.assignment)}</span>` : ''}
+            <span class="ac-time">${time}</span>
+          </div>
+          ${stepsHtml}
+          <div class="ac-live">
+            <span class="ac-main">${escapeHtml(sum.main)}</span>${emp.status === 'running' ? '<span class="dots"><i>.</i><i>.</i><i>.</i></span>' : ''}
+            ${sum.sub ? `<span class="ac-sub">${escapeHtml(sum.sub)}</span>` : ''}
+          </div>
+          <div class="ac-foot">
+            ${emp.artifactPath
+              ? `<a class="ac-file" href="/api/artifact?path=${encodeURIComponent(emp.artifactPath)}" target="_blank" onclick="event.stopPropagation()">${escapeHtml(emp.artifact)}</a>`
+              : `<span class="ac-dep">${(emp.deps || []).length ? '선행 ' + emp.deps.join(', ') : '선행 없음'}</span>`}
+            <span style="margin-left:auto">${emp.currentCost != null ? '$' + emp.currentCost.toFixed(3) : ''}</span>
+          </div>
+        </div>`;
+    });
+    cardsEl.innerHTML = html;
+
+    document.querySelectorAll('.acard, .pipe-chip').forEach((el) => {
+      el.addEventListener('click', () => {
+        const role = el.dataset.role;
+        selectedRole = selectedRole === role ? null : role;
+        render();
+      });
+    });
+  }
+
+  // ---- 프로젝트 현황 ----
+
+  async function openProject() {
+    projOpen = true;
+    try {
+      const res = await fetch('/api/project');
+      if (!res.ok) throw new Error(`서버가 ${res.status} 응답 (서버를 재시작해야 할 수 있습니다)`);
+      renderProject(await res.json());
+    } catch (err) {
+      projOpen = false;
+      showError('프로젝트 정보를 불러오지 못했습니다', err.message);
+    }
+  }
+  function closeProject() { projOpen = false; projEl.innerHTML = ''; }
+
+  const mdLite = (t) => escapeHtml(t || '')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .split('\n')
+    .map((l) => l.replace(/^\s*[-*]\s+/, '• '))
+    .join('<br>');
+
+  function card(title, content, color, wide) {
+    return `<div class="pj-card${wide ? ' wide' : ''}" style="border-top-color:${color}">
+      <h5>${escapeHtml(title)}</h5>
+      <div class="pj-body">${content || '<span class="pj-empty">아직 파악된 내용이 없습니다</span>'}</div>
+    </div>`;
+  }
+
+  /** 파악 전이거나 코드가 그새 바뀐 경우에만 실행 버튼을 보여준다 */
+  function onboardBanner(p) {
+    if (p.onboarding) {
+      return `<div class="onboard-run">
+        <span>코드와 git 내력을 훑는 중입니다<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>
+        <span style="margin-left:auto;font-size:11px;color:var(--faint)">보통 1~3분 걸립니다</span>
+      </div>`;
+    }
+    if (p.onboardError) {
+      return `<div class="warn-box"><b>파악에 실패했습니다</b><br>${escapeHtml(p.onboardError)}</div>`;
+    }
+    if (!p.hasCode) {
+      return `<div class="onboard-run" style="border-color:#3f5a80">
+        빈 폴더입니다. 파악할 기존 코드가 없으니 바로 업무를 지시하면 됩니다.
+      </div>`;
+    }
+    if (!p.onboarded) {
+      return `<div class="onboard-box">
+        <span class="onboard-msg">
+          <b>아직 이 프로젝트를 파악하지 않았습니다.</b><br>
+          코드 구조·기존 API·관례와 git 내력을 훑어야 팀이 기존 규칙을 지키며 작업합니다.
+          업무를 지시해도 자동으로 먼저 하지만, 지금 미리 해둘 수 있습니다. (약 $0.3)
+        </span>
+        <button class="btn-onboard" id="onboard-go">지금 파악하기</button>
+      </div>`;
+    }
+    if (p.stale) {
+      return `<div class="onboard-box">
+        <span class="onboard-msg">
+          <b>파악 이후 코드가 바뀌었습니다.</b><br>
+          아래 내용이 현재 코드와 다를 수 있습니다. 다시 훑으면 최신 상태로 갱신됩니다.
+        </span>
+        <button class="btn-onboard" id="onboard-go">다시 파악하기</button>
+      </div>`;
+    }
+    return '';
+  }
+
+  async function startOnboarding() {
+    const btn = document.getElementById('onboard-go') || document.getElementById('need-go');
+    if (btn) { btn.disabled = true; btn.textContent = '시작하는 중…'; }
+    try {
+      const res = await fetch('/api/onboard', { method: 'POST' });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error || `서버가 ${res.status} 응답`);
+      }
+      pollOnboarding();
+      if (projOpen) openProject();   // 모달이 열려 있으면 진행 표시로 갈아끼운다
+    } catch (err) {
+      if (projOpen) closeProject();
+      showError('파악을 시작하지 못했습니다', err.message);
+    }
+  }
+
+  /** 끝나면 화면을 저절로 채운다 — 사용자가 새로고침할 이유가 없게 */
+  function pollOnboarding() {
+    const timer = setInterval(async () => {
+      try {
+        const st = await (await fetch('/api/onboard/status')).json();
+        if (!st.running) {
+          clearInterval(timer);
+          if (projOpen) openProject();
+        }
+      } catch { clearInterval(timer); }
+    }, 4000);
+  }
+
+  function renderProject(p) {
+    const h = p.history?.[0];
+
+    const repoRows = p.repos.length
+      ? p.repos.map((r) => `<div class="repo-row">
+          <span class="repo-name">${escapeHtml(r.name)}</span>
+          <span class="repo-branch">${escapeHtml(r.branch || '—')}</span>
+          ${r.dirty ? '<span class="repo-dirty">⚠ 커밋 안 된 변경</span>' : '<span class="repo-clean">깨끗함</span>'}
+        </div>`).join('')
+      : '<span class="pj-empty">git repo 없음</span>';
+
+    const hotspots = h && h.hotspots?.length
+      ? `<table class="hot-t">${h.hotspots.map(([f, n]) =>
+          `<tr><td class="hot-f">${escapeHtml(f)}</td><td>${n}회</td></tr>`).join('')}</table>
+         <div style="font-size:10.5px;color:var(--faint);margin-top:7px">자주 바뀐 곳입니다. 건드릴 때 회귀에 주의하세요.</div>`
+      : null;
+
+    const commits = h && h.recent?.length
+      ? `<div class="commit-list">${h.recent.map((c) => escapeHtml(c)).join('<br>')}</div>`
+      : null;
+
+    const runs = p.recent.length
+      ? p.recent.map((r) => `<div class="run-line">
+          ${r.kind ? `<span class="run-kind">${escapeHtml(r.kind)}</span>` : ''}
+          <span class="run-req" title="${escapeHtml(r.requirement)}">${escapeHtml(r.requirement)}</span>
+          ${r.git?.length ? `<span class="run-sha">${escapeHtml(r.git[0].branch || '')} ${escapeHtml(r.git[0].sha || '')}</span>`
+            : `<span class="run-sha" style="color:var(--faint)">${escapeHtml(r.status)}</span>`}
+        </div>`).join('')
+      : '<span class="pj-empty">아직 실행이 없습니다</span>';
+
+    projEl.innerHTML = `
+      <div class="modal-back" id="proj-back">
+        <div class="modal" style="width:min(1000px,100%);max-height:88vh">
+          <div class="modal-head">
+            <span class="modal-title">📋 프로젝트</span>
+            ${p.onboarded ? '<span class="ac-state done">파악 완료</span>'
+              : '<span class="ac-state pending">아직 파악 전</span>'}
+            <button class="modal-x" id="proj-x">✕ 닫기</button>
+          </div>
+
+          <div class="pj-head">
+            <div class="pj-name">${escapeHtml(p.name)}</div>
+            <div class="pj-path">${escapeHtml(p.workspace)}</div>
+            <div class="pj-stats">
+              <span class="pj-stat">실행<b>${p.stats.runs}건</b></span>
+              <span class="pj-stat">누적 비용<b>$${Number(p.stats.cost).toFixed(2)}</b></span>
+              <span class="pj-stat">QA 판정<b>${p.stats.pass}P / ${p.stats.fail}F</b></span>
+              ${h && !h.empty ? `<span class="pj-stat">커밋<b>${h.commits}개</b></span>` : ''}
+              ${h && !h.empty ? `<span class="pj-stat">기간<b>${h.first} ~ ${h.last}</b></span>` : ''}
+            </div>
+            ${p.related?.length ? `<div style="font-size:11px;color:var(--faint);margin-top:8px">repo 를 공유하는 다른 프로젝트: ${p.related.map(escapeHtml).join(', ')}</div>` : ''}
+          </div>
+
+          <div class="modal-body">
+            ${onboardBanner(p)}
+
+            <div class="pj-grid">
+              ${card('무엇을 하는 프로젝트인가', mdLite(p.summary), '#3ddc84', true)}
+              ${card('지금 향하는 곳', mdLite(p.flow), '#ffb14a', true)}
+              ${card('repo', repoRows, '#8b7bff')}
+              ${card('팀 규칙 · 커밋 관례',
+                 mdLite(p.teamRules) || (h && !h.empty ? escapeHtml(h.convention) : ''), '#6ac9e0')}
+              ${card('자주 바뀌는 파일', hotspots, '#f0a23d')}
+              ${card('건드리면 위험한 곳', mdLite(p.risky), '#ff6a5e')}
+              ${card('남은 일',
+                 p.backlog?.open
+                   ? `<div style="font-size:11px;color:var(--faint);margin-bottom:7px">미룬 것 ${p.backlog.open}건${p.backlog.done ? ` · 처리됨 ${p.backlog.done}건` : ''} · 다음 작업 정할 때 참고</div>` +
+                     p.backlog.items.map((i) =>
+                       `<div style="font-size:12px;color:var(--sub);padding:4px 0;border-bottom:1px solid var(--line)">
+                          ${escapeHtml(i.text)}
+                          <span style="color:var(--faint);font-size:10px;margin-left:5px">${escapeHtml(i.from)}</span>
+                        </div>`).join('')
+                   : null,
+                 '#ffb14a', true)}
+              ${card('확정된 계약',
+                 p.contracts?.has
+                   ? `<div style="font-size:11px;color:var(--faint);margin-bottom:7px">실행 ${p.contracts.entries}건에 걸쳐 쌓인 약속 · 새 작업은 이걸 깨지 않습니다</div>` +
+                     (p.contracts.endpoints.length
+                       ? `<div class="commit-list">${p.contracts.endpoints.map((e) => escapeHtml(e)).join('<br>')}</div>`
+                       : '<span class="pj-empty">엔드포인트 없음</span>')
+                   : null,
+                 '#3ddc84', true)}
+              ${card('기존 인터페이스 (코드에서 파악)', mdLite(p.interfaces), '#4aa8f0', true)}
+              ${card('코드 관례', mdLite(p.conventions), '#a87bf0', true)}
+              ${card('최근 커밋', commits, '#9fb3c8')}
+              ${card('최근 작업', runs, '#3dc9a8')}
+            </div>
+          </div>
+          <div class="modal-hint">문서 원문은 📁 문서 · 경로 ${escapeHtml(p.docsDir)}</div>
+        </div>
+      </div>`;
+
+    const ob = document.getElementById('onboard-go');
+    if (ob) ob.addEventListener('click', startOnboarding);
+    document.getElementById('proj-x').addEventListener('click', closeProject);
+    document.getElementById('proj-back').addEventListener('click', (e) => {
+      if (e.target.id === 'proj-back') closeProject();
+    });
+  }
+
+  // ---- 직원 명부 ----
+
+  async function openStaff() {
+    staffOpen = true;
+    try {
+      const res = await fetch('/api/catalog');
+      if (!res.ok) throw new Error(`서버가 ${res.status} 응답 (서버를 재시작해야 할 수 있습니다)`);
+      catalog = await res.json();
+      if (!Array.isArray(catalog) || !catalog.length) throw new Error('직무 목록이 비어 있습니다');
+      staffPick = staffPick || catalog[0].key;
+      renderStaff();
+    } catch (err) {
+      showError('직원 명부를 불러오지 못했습니다', err.message);
+    }
+  }
+  function closeStaff() { staffOpen = false; staffEl.innerHTML = ''; }
+
+  function renderStaff() {
+    if (!staffOpen || !catalog) return;
+    const me = catalog.find((r) => r.key === staffPick) || catalog[0];
+
+    const cats = [];
+    catalog.forEach((r) => {
+      let g = cats.find((c) => c.name === r.category);
+      if (!g) { g = { name: r.category, items: [] }; cats.push(g); }
+      g.items.push(r);
+    });
+
+    const list = cats.map((g) => `
+      <div class="staff-cat">${escapeHtml(g.name)}</div>
+      ${g.items.map((r) => `
+        <div class="staff-row ${r.key === me.key ? 'on' : ''}" data-key="${r.key}">
+          <span class="staff-sw" style="background:${ROLE_COLORS[r.key] || '#8b7bff'}"></span>
+          <span class="staff-nm">${escapeHtml(r.label)}</span>
+          ${r.employedNow ? '<span class="staff-tag now">투입중</span>'
+            : r.core ? '<span class="staff-tag core">필수</span>' : ''}
+        </div>`).join('')}`).join('');
+
+    staffEl.innerHTML = `
+      <div class="modal-back" id="staff-back">
+        <div class="modal" style="width:min(1000px,100%);height:84vh">
+          <div class="modal-head">
+            <span class="modal-title">👥 직원 명부</span>
+            <span class="ac-state done" style="border-color:#47526e;color:var(--faint)">${catalog.length}개 직무</span>
+            <button class="modal-x" id="staff-x">✕ 닫기</button>
+          </div>
+          <div class="staff-wrap">
+            <div class="staff-list">${list}</div>
+            <div class="staff-view">
+              <div class="staff-hero">
+                <canvas id="portrait" class="staff-portrait" width="52" height="58"></canvas>
+                <div style="min-width:0">
+                  <div class="staff-title" style="color:${ROLE_COLORS[me.key] || '#8b7bff'}">${escapeHtml(me.label)}</div>
+                  <div class="staff-blurb">${escapeHtml(me.blurb)}</div>
+                  <div class="staff-facts">
+                    <span class="fact">산출물<b>${me.stackKey ? '스택에 따라 결정' : escapeHtml(me.artifact)}</b></span>
+                    <span class="fact">작업 방식<b>${me.mode === 'revise' ? '매 단계 전체 재작성' : '섹션 누적'}</b></span>
+                    <span class="fact">선행<b>${me.deps.length ? me.deps.map((d) => escapeHtml(labelOf(d))).join(', ') : '없음'}</b></span>
+                    <span class="fact">넘기는 곳<b>${me.handsTo.length ? me.handsTo.map(escapeHtml).join(', ') : '최종'}</b></span>
+                    <span class="fact">여러 명<b>${me.splittable ? '가능' : '1명'}</b></span>
+                    ${me.decidesStack ? '<span class="fact">권한<b>기술 스택 결정</b></span>' : ''}
+                    ${me.watchdog ? '<span class="fact">권한<b>진행 점검</b></span>' : ''}
+                    ${me.reviewedBy && me.reviewedBy.length ? `<span class="fact">검토받음<b>${me.reviewedBy.map((k) => escapeHtml(labelOf(k))).join(', ')}</b></span>` : ''}
+                    <span class="fact">고용 이력<b>${me.stats.hires}회 · $${Number(me.stats.cost || 0).toFixed(2)}</b></span>
+                  </div>
+                </div>
+              </div>
+
+              <h4>시스템 프롬프트</h4>
+              <div class="prompt-box">${escapeHtml(me.systemPrompt)}</div>
+
+              <h4>작업 단계 ${me.steps.length}개</h4>
+              ${me.steps.map((st, i) => `
+                <div class="step-row">
+                  <span class="step-no">${i + 1}</span>
+                  <div style="min-width:0">
+                    <div class="step-name">${escapeHtml(st.label)}</div>
+                    <div class="step-text">${escapeHtml(st.prompt)}</div>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>
+          <div class="modal-hint">직무를 고르면 그 사람이 받는 프롬프트 전문이 보입니다 · ESC 로 닫기</div>
+        </div>
+      </div>`;
+
+    document.getElementById('staff-x').addEventListener('click', closeStaff);
+    document.getElementById('staff-back').addEventListener('click', (e) => {
+      if (e.target.id === 'staff-back') closeStaff();
+    });
+    staffEl.querySelectorAll('.staff-row').forEach((el) => {
+      el.addEventListener('click', () => { staffPick = el.dataset.key; renderStaff(); });
+    });
+    drawPortrait(me.key);
+  }
+
+  function labelOf(key) {
+    const r = (catalog || []).find((x) => x.key === key);
+    return r ? r.label : key;
+  }
+
+  /** 명부용 초상 — 사무실에서 쓰는 것과 같은 스프라이트 */
+  function drawPortrait(roleKey) { drawPortraitOn('portrait', roleKey); }
+
+  function drawPortraitOn(canvasId, roleKey) {
+    const cv = document.getElementById(canvasId);
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const p = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    const W0 = cv.width, H0 = cv.height;
+    p(0, 0, W0, H0, '#20283a');
+    p(0, H0 - 18, W0, 18, '#2b3550');
+    dither(p, 0, H0 - 24, W0, 8, 'rgba(255,255,255,0.05)', 2);
+    const look = LOOKS[roleKey] || FALLBACK_LOOK;
+    drawWorker(p, Math.round(W0 / 2) - 11, H0 - 40, look, ROLE_COLORS[roleKey] || '#8b7bff', roleKey, 0);
+  }
+
+  // ---- docs browser ----
+
+  async function openDocs() {
+    docsOpen = true;
+    try {
+      const res = await fetch('/api/tree');
+      if (!res.ok) throw new Error(`서버가 ${res.status} 응답 (서버를 재시작해야 할 수 있습니다)`);
+      docsTree = await res.json();
+    } catch (err) {
+      docsOpen = false;
+      showError('문서를 불러오지 못했습니다', err.message);
+      return;
+    }
+    const first = findFirst(docsTree, 'ORG.md') || findAnyFile(docsTree);
+    renderDocs();
+    if (first) loadDoc(first);
+  }
+
+  function closeDocs() { docsOpen = false; docsCurrent = null; docsEl.innerHTML = ''; }
+
+  /** 조용히 실패하지 않는다 — 안 되면 왜 안 되는지 화면에 띄운다 */
+  function showError(title, detail) {
+    staffEl.innerHTML = `
+      <div class="modal-back" id="err-back">
+        <div class="modal" style="width:min(520px,100%)">
+          <div class="modal-head">
+            <span class="modal-title" style="color:var(--red)">⚠ ${escapeHtml(title)}</span>
+            <button class="modal-x" id="err-x">✕ 닫기</button>
+          </div>
+          <div class="modal-body">
+            <div class="prompt-box" style="color:#ffb4ab">${escapeHtml(detail)}</div>
+            <p style="font-size:12.5px;color:var(--sub)">터미널에서 서버를 껐다 켠 뒤 다시 시도하세요.</p>
+          </div>
+        </div>
+      </div>`;
+    const close = () => { staffEl.innerHTML = ''; staffOpen = false; };
+    document.getElementById('err-x').addEventListener('click', close);
+    document.getElementById('err-back').addEventListener('click', (e) => {
+      if (e.target.id === 'err-back') close();
+    });
+  }
+
+  function findFirst(nodes, name) {
+    for (const n of nodes) {
+      if (n.type === 'file' && n.name === name) return n;
+      if (n.type === 'dir') { const f = findFirst(n.children, name); if (f) return f; }
+    }
+    return null;
+  }
+  function findAnyFile(nodes) {
+    for (const n of nodes) {
+      if (n.type === 'file') return n;
+      if (n.type === 'dir') { const f = findAnyFile(n.children); if (f) return f; }
+    }
+    return null;
+  }
+
+  function treeHtml(nodes, depth = 0) {
+    return nodes.map((n) => {
+      if (n.type === 'dir') {
+        return `<div class="tdir" style="padding-left:${depth * 10}px">${escapeHtml(n.name)}/</div>` +
+               treeHtml(n.children, depth + 1);
+      }
+      const on = docsCurrent && docsCurrent.abs === n.abs ? ' on' : '';
+      const kb = n.size >= 1024 ? (n.size / 1024).toFixed(1) + 'K' : n.size + 'B';
+      return `<span class="tfile${on}" style="padding-left:${depth * 10 + 6}px" data-abs="${encodeURIComponent(n.abs)}">
+                ${escapeHtml(n.name)}<span class="tsize">${kb}</span></span>`;
+    }).join('');
+  }
+
+  async function loadDoc(node) {
+    docsCurrent = node;
+    const txt = await (await fetch('/api/artifact?path=' + encodeURIComponent(node.abs))).text();
+    renderDocs(txt);
+  }
+
+  function renderDocs(content) {
+    if (!docsOpen) return;
+    const body = content == null
+      ? '<p style="color:var(--faint)">왼쪽에서 문서를 고르세요.</p>'
+      : (/\.(md|markdown)$/i.test(docsCurrent.name)
+          ? renderMarkdown(content)
+          : `<pre><code>${escapeHtml(content)}</code></pre>`);
+
+    docsEl.innerHTML = `
+      <div class="modal-back" id="docs-back">
+        <div class="modal" style="width:min(1060px,100%);height:82vh">
+          <div class="modal-head">
+            <span class="modal-title">📁 조직 문서</span>
+            <span class="ac-state done" style="border-color:#47526e;color:var(--faint)">${docsCurrent ? escapeHtml(docsCurrent.path) : '.agent-org'}</span>
+            <button class="modal-x" id="docs-x">✕ 닫기</button>
+          </div>
+          <div class="docs-wrap">
+            <div class="docs-tree tnode">${docsTree ? treeHtml(docsTree) : ''}</div>
+            <div class="docs-view md">${body}</div>
+          </div>
+          <div class="modal-hint">ESC · 배경 클릭 · ✕ 로 닫기</div>
+        </div>
+      </div>`;
+
+    document.getElementById('docs-x').addEventListener('click', closeDocs);
+    document.getElementById('docs-back').addEventListener('click', (e) => {
+      if (e.target.id === 'docs-back') closeDocs();
+    });
+    docsEl.querySelectorAll('.tfile').forEach((el) => {
+      el.addEventListener('click', () => {
+        const abs = decodeURIComponent(el.dataset.abs);
+        const node = findByAbs(docsTree, abs);
+        if (node) loadDoc(node);
+      });
+    });
+  }
+
+  function findByAbs(nodes, abs) {
+    for (const n of nodes) {
+      if (n.type === 'file' && n.abs === abs) return n;
+      if (n.type === 'dir') { const f = findByAbs(n.children, abs); if (f) return f; }
+    }
+    return null;
+  }
+
+  // compact markdown renderer — headings, tables, lists, code, quotes
+  function renderMarkdown(src) {
+    const esc = (t) => escapeHtml(t);
+    const inline = (t) => esc(t)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+
+    const lines = src.split('\n');
+    let out = '';
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (line.startsWith('```')) {
+        let code = '';
+        i++;
+        while (i < lines.length && !lines[i].startsWith('```')) code += lines[i++] + '\n';
+        i++;
+        out += `<pre><code>${esc(code)}</code></pre>`;
+        continue;
+      }
+      if (/^\|/.test(line) && /^\|[\s:-]+\|/.test(lines[i + 1] || '')) {
+        const cells = (l) => l.split('|').slice(1, -1).map((c) => c.trim());
+        const head = cells(line);
+        i += 2;
+        let rows = '';
+        while (i < lines.length && /^\|/.test(lines[i])) {
+          rows += '<tr>' + cells(lines[i++]).map((c) => `<td>${inline(c)}</td>`).join('') + '</tr>';
+        }
+        out += `<table><thead><tr>${head.map((h) => `<th>${inline(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+        continue;
+      }
+      const h = line.match(/^(#{1,4})\s+(.*)$/);
+      if (h) { out += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; i++; continue; }
+      if (/^>\s?/.test(line)) { out += `<blockquote>${inline(line.replace(/^>\s?/, ''))}</blockquote>`; i++; continue; }
+      if (/^\s*[-*]\s+/.test(line)) {
+        let items = '';
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          items += `<li>${inline(lines[i++].replace(/^\s*[-*]\s+/, ''))}</li>`;
+        }
+        out += `<ul>${items}</ul>`; continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        let items = '';
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          items += `<li>${inline(lines[i++].replace(/^\s*\d+\.\s+/, ''))}</li>`;
+        }
+        out += `<ol>${items}</ol>`; continue;
+      }
+      if (line.trim()) { out += `<p>${inline(line)}</p>`; }
+      i++;
+    }
+    return out;
+  }
+
+  function statusLine(emp) {
+    if (emp.status === 'idle' || emp.status === 'pending') return '대기중 zZz';
+    if (emp.status === 'running') return '작업중…';
+    if (emp.status === 'done') return '완료';
+    if (emp.status === 'failed') return '오류 발생';
+    if (emp.status === 'blocked') return '선행 작업 실패로 중단';
+    return '';
+  }
+
+  function renderDetail(state) {
+    if (!selectedRole) { detailEl.innerHTML = ''; return; }
+    const emp = state.employees.find((e) => e.key === selectedRole);
+    if (!emp) { detailEl.innerHTML = ''; return; }
+
+    const color = ROLE_COLORS[emp.roleKey] || '#8b7bff';
+    const cur = emp.currentTokens;
+    const sum = summarize(emp);
+
+    const tokenGrid = cur ? `
+      <div class="token-grid">
+        <div class="token-box"><div class="t-label">Input</div><div class="t-val">${formatNum(cur.input)}</div></div>
+        <div class="token-box"><div class="t-label">Output</div><div class="t-val">${formatNum(cur.output)}</div></div>
+        <div class="token-box"><div class="t-label">Cache Read</div><div class="t-val">${formatNum(cur.cacheRead)}</div></div>
+        <div class="token-box"><div class="t-label">Cache Write</div><div class="t-val">${formatNum(cur.cacheCreation)}</div></div>
+      </div>` : '';
+
+    const stepsHtml = (emp.steps && emp.steps.length) ? `
+      <h4>작업 단계</h4>
+      <div class="ac-steps">${emp.steps.map((label, i) => {
+        let cls = '';
+        if (emp.status === 'done') cls = 'sdone';
+        else if (emp.status === 'running') {
+          if (i < (emp.stepIndex ?? 0)) cls = 'sdone';
+          else if (i === (emp.stepIndex ?? 0)) cls = 'scur';
+        }
+        return `<span class="ac-step ${cls}">${cls === 'sdone' ? '✓' : i + 1} ${escapeHtml(label)}</span>`;
+      }).join('')}</div>` : '';
+
+    detailEl.innerHTML = `
+      <div class="modal-back" id="modal-back">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-head">
+            <div class="d-avatar" style="background:${color};width:30px;height:30px;font-size:10px">${ROLE_INITIALS[emp.roleKey] || emp.label}</div>
+            <span class="modal-title">${emp.label}</span>
+            <span class="ac-state ${emp.status}">${STATE_KO[emp.status] || emp.status}</span>
+            ${sum.verdict ? `<span class="ac-verdict ${sum.verdict}">${sum.verdict}</span>` : ''}
+            ${emp.attempt > 0 ? `<span class="ac-rework">재작업 ${emp.attempt}차</span>` : ''}
+            ${emp.reviewStatus ? `<span class="ac-review ${emp.reviewStatus}">${REVIEW_KO[emp.reviewStatus] || emp.reviewStatus}</span>` : ''}
+            ${emp.assignment && emp.assignment !== '전체' ? `<span class="ac-scope">${escapeHtml(emp.assignment)}</span>` : ''}
+            <button class="modal-x" id="modal-x">✕ 닫기</button>
+          </div>
+          <div class="modal-body">
+            ${stepsHtml}
+            ${emp.artifactPath ? `<h4>산출물 파일</h4>
+              <div class="artifact-row">
+                <a class="artifact-link" href="/api/artifact?path=${encodeURIComponent(emp.artifactPath)}" target="_blank">${escapeHtml(emp.artifact)}</a>
+                <span class="artifact-path">${escapeHtml(emp.artifactPath)}</span>
+              </div>` : ''}
+            ${cur ? '<h4>토큰 사용량</h4>' + tokenGrid : ''}
+            <h4>작업 내용 전문</h4>
+            <div class="output-box">${escapeHtml(emp.currentOutput || '아직 산출물이 없습니다.')}</div>
+            <h4>누적 통계 (전체 업무 기준)</h4>
+            <div class="cum-row">
+              <span>처리 건수 <b>${emp.cumulative.stage_count}</b></span>
+              <span>누적 비용 <b>$${Number(emp.cumulative.cost).toFixed(4)}</b></span>
+              <span>입력 <b>${formatNum(emp.cumulative.tokens_input)}</b></span>
+              <span>출력 <b>${formatNum(emp.cumulative.tokens_output)}</b></span>
+              <span>캐시읽기 <b>${formatNum(emp.cumulative.tokens_cache_read)}</b></span>
+            </div>
+          </div>
+          <div class="modal-hint">ESC · 배경 클릭 · ✕ 로 닫기</div>
+        </div>
+      </div>`;
+
+    document.getElementById('modal-x').addEventListener('click', closeDetail);
+    document.getElementById('modal-back').addEventListener('click', (e) => {
+      if (e.target.id === 'modal-back') closeDetail();   // only the backdrop, not the panel
+    });
+  }
+
+  function closeDetail() {
+    selectedRole = null;
+    render();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (projOpen) closeProject();
+    else if (briefEl.innerHTML) closeBrief();
+    else if (staffOpen) closeStaff();
+    else if (docsOpen) closeDocs();
+    else if (selectedRole) closeDetail();
+  });
+
+  function labelForTask(status) {
+    if (status === 'running') return '진행중';
+    if (status === 'done') return '완료';
+    if (status === 'failed') return '실패';
+    if (status === 'over_budget') return '예산 초과 중단';
+    if (status === 'cancelled') return '사용자 중단';
+    return status;
+  }
+  function formatNum(n) {
+    n = Number(n) || 0;
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  }
+  function escapeHtml(str) {
+    return String(str).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  }
+</script>
+</body>
+</html>

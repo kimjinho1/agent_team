@@ -16,6 +16,9 @@ import { CATALOG, ROLE_BY_KEY } from './roles.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** public/ 에서 내보낼 파일 종류 */
+const STATIC_TYPES = { '.css': 'text/css', '.js': 'text/javascript' };
+
 /** 뽑힌 팀 안에서 동시에 일할 수 있는 묶음 */
 function buildWaves(roster) {
   const hired = new Set(roster.map((p) => p.key));
@@ -479,6 +482,19 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(fs.readFileSync(path.join(__dirname, 'public', 'dashboard.html')));
       return;
+    }
+
+    // 대시보드가 직접 불러오는 정적 파일. 빌드 단계를 두지 않으므로 브라우저가
+    // css·js 를 그대로 읽는다. public/ 바로 아래 한 겹만 허용한다 —
+    // 이름에 / 가 들어가면 거부하므로 상위 경로로 나갈 방법이 없다.
+    const name = url.pathname.slice(1);
+    if (STATIC_TYPES[path.extname(name)] && !name.includes('/')) {
+      const target = path.join(__dirname, 'public', name);
+      if (fs.existsSync(target)) {
+        res.writeHead(200, { 'Content-Type': `${STATIC_TYPES[path.extname(name)]}; charset=utf-8` });
+        res.end(fs.readFileSync(target));
+        return;
+      }
     }
 
     res.writeHead(404);

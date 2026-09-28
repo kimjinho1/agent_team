@@ -145,67 +145,16 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   const outputs = {};            // "fe#0" -> 산출물
   const done = new Set();
   const failed = new Set();
-  const running = new Map();
-  let overBudget = false;
   const budgetLeft = () => budget <= 0 || totalCost < budget;
 
-  const ready = () =>
-    roster.filter((p) => {
-      const id = idOf(p);
-      if (done.has(id) || failed.has(id) || running.has(id)) return false;
-      return personDeps(p, roster).every((d) => done.has(idOf(d)));
-    });
-
-  while (done.size + failed.size < roster.length) {
-    if (signal.cancelled) break;
-    if (!budgetLeft()) { overBudget = true; break; }
-
-    for (const p of ready()) {
-      const id = idOf(p);
-      running.set(
-        id,
-        runPerson(db, p, { roster, stageId: stageIds[id], requirement, outputs, runDir, signal,
-          getStack: () => stack, codebase, kind, contracts, backlog })
-          .then(async (res) => {
-            outputs[id] = res.output;
-            totalCost += res.cost;
-
-            // 혼자 확정하지 못한다 — 관련자 승인을 받는다
-            if (review && !signal.cancelled && budgetLeft()) {
-              const gate = await reviewGate(db, p, {
-                roster, stageId: stageIds[id], requirement, runDir, outputs, signal,
-                getStack: () => stack, artifact: res.output,
-              });
-              totalCost += gate.cost;
-              if (gate.revised) outputs[id] = gate.output;
-            }
-            done.add(id);
-            // 스택을 정하는 사람이 끝나면 그 결정을 팀 전체가 따른다
-            if (ROLE_BY_KEY[p.key]?.decidesStack && !stack) {
-              const decided = parseStack(res.output);
-              if (decided) {
-                stack = fillGaps(decided, roster, areaOf);
-                db.prepare('UPDATE tasks SET stack = ? WHERE id = ?').run(JSON.stringify(stack), taskId);
-                console.log(`  기술 스택 확정 (${personTitle(p)})`);
-              }
-            }
-          })
-          .catch(() => { failed.add(id); })
-          .finally(() => { running.delete(id); })
-      );
-    }
-
-    if (running.size === 0) break;
-    await Promise.race(running.values());
-
-    if (!stack && roster.some((p) => areaOf(p.key) && !done.has(idOf(p)))) {
-      const decider = roster.find((p) => ROLE_BY_KEY[p.key]?.decidesStack);
-      if (!decider || done.has(idOf(decider)) || failed.has(idOf(decider))) {
-        stack = fillGaps(DEFAULT_STACK, roster, areaOf);
-        db.prepare('UPDATE tasks SET stack = ? WHERE id = ?').run(JSON.stringify(stack), taskId);
-      }
-    }
-  }
+  const exec = await runExecutionLoop(db, {
+    roster, outputs, done, failed, stageIds, idOf, taskId,
+    requirement, runDir, signal, budgetLeft, review,
+    stack, areaOf, codebase, kind, contracts, backlog,
+    onCost: (c) => { totalCost += c; },
+  });
+  stack = exec.stack;
+  const overBudget = exec.overBudget;
 
   const qaPerson = roster.find((p) => p.key === 'qa');
   const round = await runReworkLoop(db, {
@@ -261,6 +210,90 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   });
 
   return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
+}
+
+/**
+ * 팀을 병렬로 돌린다.
+ *
+ * 선행이 끝난 사람은 바로 시작한다. 순서는 사람 목록이 아니라 의존 관계가
+ * 정한다 — 그래서 FE/BE 처럼 서로 안 기다려도 되는 사람은 동시에 일한다.
+ *
+ * outputs·done·failed 는 호출자와 공유하는 그릇이고, 비용은 onCost 로 넘긴다.
+ * 스택은 이 안에서 확정되므로 최종값을 돌려준다.
+ */
+async function runExecutionLoop(db, ctx) {
+  const { roster, outputs, done, failed, stageIds, idOf, taskId,
+          requirement, runDir, signal, budgetLeft, review,
+          areaOf, codebase, kind, contracts, backlog, onCost } = ctx;
+
+  let stack = ctx.stack;
+  const running = new Map();
+  let overBudget = false;
+
+  const saveStack = (v) => {
+    stack = v;
+    db.prepare('UPDATE tasks SET stack = ? WHERE id = ?').run(JSON.stringify(stack), taskId);
+  };
+
+  const ready = () =>
+    roster.filter((p) => {
+      const id = idOf(p);
+      if (done.has(id) || failed.has(id) || running.has(id)) return false;
+      return personDeps(p, roster).every((d) => done.has(idOf(d)));
+    });
+
+  while (done.size + failed.size < roster.length) {
+    if (signal.cancelled) break;
+    if (!budgetLeft()) { overBudget = true; break; }
+
+    for (const p of ready()) {
+      const id = idOf(p);
+      running.set(
+        id,
+        runPerson(db, p, { roster, stageId: stageIds[id], requirement, outputs, runDir, signal,
+          getStack: () => stack, codebase, kind, contracts, backlog })
+          .then(async (res) => {
+            outputs[id] = res.output;
+            onCost(res.cost);
+
+            // 혼자 확정하지 못한다 — 관련자 승인을 받는다
+            if (review && !signal.cancelled && budgetLeft()) {
+              const gate = await reviewGate(db, p, {
+                roster, stageId: stageIds[id], requirement, runDir, outputs, signal,
+                getStack: () => stack, artifact: res.output,
+              });
+              onCost(gate.cost);
+              if (gate.revised) outputs[id] = gate.output;
+            }
+            done.add(id);
+            // 스택을 정하는 사람이 끝나면 그 결정을 팀 전체가 따른다
+            if (ROLE_BY_KEY[p.key]?.decidesStack && !stack) {
+              const decided = parseStack(res.output);
+              if (decided) {
+                saveStack(fillGaps(decided, roster, areaOf));
+                console.log(`  기술 스택 확정 (${personTitle(p)})`);
+              }
+            }
+          })
+          .catch(() => { failed.add(id); })
+          .finally(() => { running.delete(id); })
+      );
+    }
+
+    if (running.size === 0) break;
+    await Promise.race(running.values());
+
+    // 정할 사람이 실패했거나 이미 끝났는데 스택이 없으면 기본값으로 간다.
+    // 여기서 안 채우면 뒤에 올 구현자들이 스택 없이 시작한다.
+    if (!stack && roster.some((p) => areaOf(p.key) && !done.has(idOf(p)))) {
+      const decider = roster.find((p) => ROLE_BY_KEY[p.key]?.decidesStack);
+      if (!decider || done.has(idOf(decider)) || failed.has(idOf(decider))) {
+        saveStack(fillGaps(DEFAULT_STACK, roster, areaOf));
+      }
+    }
+  }
+
+  return { stack, overBudget };
 }
 
 /**

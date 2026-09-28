@@ -181,10 +181,17 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
     });
   }
 
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+  // 경로별 처리기. "METHOD 경로" 를 먼저 찾고 없으면 "* 경로" 를 찾는다 —
+  // POST 만 받는 라우트와 메서드를 가리지 않는 라우트를 구분하기 위한 것이다.
+  // 표에 없는 경로는 아래에서 정적 파일로, 그것도 아니면 404 로 떨어진다.
+  // / 와 /index.html 이 같은 페이지를 내보내므로 처리기를 하나만 둔다
+  const serveDashboard = (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(fs.readFileSync(path.join(__dirname, 'public', 'dashboard.html')));
+  };
 
-    if (req.method === 'POST' && url.pathname === '/api/tasks') {
+  const ROUTES = {
+    'POST /api/tasks': async (req, res) => {
       try {
         const body = await readJsonBody(req);
         const requirement = String(body.requirement || '').trim();
@@ -198,30 +205,24 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       } catch (e) {
         sendJson(res, 400, { error: 'invalid body' });
       }
-      return;
-    }
-
+    },
     // stop the running pipeline after the step in flight finishes
-    if (req.method === 'POST' && url.pathname === '/api/cancel') {
+    'POST /api/cancel': async (req, res) => {
       const dropped = queue.length;
       queue.length = 0;
       if (currentSignal) currentSignal.cancelled = true;
       sendJson(res, 200, { cancelling: !!currentSignal, droppedFromQueue: dropped });
-      return;
-    }
-
+    },
     // one past run, for the history view
-    if (url.pathname === '/api/run') {
+    '* /api/run': async (req, res, url) => {
       const id = Number(url.searchParams.get('id'));
       const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
       if (!task) { res.writeHead(404); res.end('not found'); return; }
       const stages = db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(id);
       sendJson(res, 200, { task, stages });
-      return;
-    }
-
+    },
     // serve a produced artifact — confined to the workspace's .agent-org dir
-    if (url.pathname === '/api/artifact') {
+    '* /api/artifact': async (req, res, url) => {
       const target = path.resolve(url.searchParams.get('path') || '');
       if (!target.startsWith(root + path.sep) || !fs.existsSync(target)) {
         res.writeHead(404); res.end('not found'); return;
@@ -230,11 +231,9 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       const type = ext === '.html' ? 'text/html' : 'text/plain';
       res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
       res.end(fs.readFileSync(target));
-      return;
-    }
-
+    },
     // 코드 파악을 지금 시작한다 (업무를 던지지 않아도 눌러서 할 수 있게)
-    if (req.method === 'POST' && url.pathname === '/api/onboard') {
+    'POST /api/onboard': async (req, res) => {
       if (onboardingState.running) {
         sendJson(res, 409, { error: '이미 파악 중입니다' });
         return;
@@ -251,19 +250,15 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       runOnboarding(project, project.repos)
         .then((r) => { onboardingState = { running: false, at: null, error: r.ok ? null : '결과가 비어 있습니다' }; })
         .catch((e) => { onboardingState = { running: false, at: null, error: String(e.message || e) }; });
-      return;
-    }
-
-    if (url.pathname === '/api/onboard/status') {
+    },
+    '* /api/onboard/status': async (req, res) => {
       sendJson(res, 200, {
         ...onboardingState,
         onboarded: fs.existsSync(path.join(orgDir(project), 'knowledge', 'CODEBASE.md')),
       });
-      return;
-    }
-
+    },
     // 이 프로젝트가 무엇인지 — 팀이 파악한 내용을 한 화면에
-    if (url.pathname === '/api/project') {
+    '* /api/project': async (req, res) => {
       const section = (file, title) => {
         try {
           const raw = fs.readFileSync(path.join(orgDir(project), 'knowledge', file), 'utf8');
@@ -335,11 +330,9 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
           git: t.git_result ? JSON.parse(t.git_result) : null,
         })),
       });
-      return;
-    }
-
+    },
     // 착수 브리핑 — 실제로 일을 시키기 전에 "이 팀으로 하겠다"를 보여준다
-    if (req.method === 'POST' && url.pathname === '/api/plan') {
+    'POST /api/plan': async (req, res) => {
       try {
         const body = await readJsonBody(req);
         const requirement = String(body.requirement || '').trim();
@@ -388,11 +381,9 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       } catch (e) {
         sendJson(res, 500, { error: String(e.message || e) });
       }
-      return;
-    }
-
+    },
     // 직원 명부 — 어떤 직무가 있고, 어떤 프롬프트로 일하는지
-    if (url.pathname === '/api/catalog') {
+    '* /api/catalog': async (req, res) => {
       const stats = db.prepare(
         `SELECT role_key,
                 COUNT(*) AS hires,
@@ -421,11 +412,9 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         stats: statMap[r.key] || { hires: 0, cost: 0, avg_cost: 0, done: 0 },
         employedNow: employedNow.has(r.key),
       })));
-      return;
-    }
-
+    },
     // the whole .agent-org tree, so the docs can be browsed from the dashboard
-    if (url.pathname === '/api/tree') {
+    '* /api/tree': async (req, res) => {
       const walk = (dir, rel = '') => {
         let out = [];
         for (const name of fs.readdirSync(dir).sort()) {
@@ -441,16 +430,12 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
         return out;
       };
       sendJson(res, 200, fs.existsSync(root) ? walk(root) : []);
-      return;
-    }
-
-    if (url.pathname === '/api/runs') {
+    },
+    '* /api/runs': async (req, res) => {
       const rows = db.prepare('SELECT * FROM tasks ORDER BY id DESC LIMIT 30').all();
       sendJson(res, 200, rows);
-      return;
-    }
-
-    if (url.pathname === '/events') {
+    },
+    '* /events': async (req, res) => {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -464,14 +449,16 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
       tick();
       const interval = setInterval(tick, 500);
       req.on('close', () => clearInterval(interval));
-      return;
-    }
+    },
+    '* /': serveDashboard,
+    '* /index.html': serveDashboard,
+  };
 
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(fs.readFileSync(path.join(__dirname, 'public', 'dashboard.html')));
-      return;
-    }
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+
+    const handler = ROUTES[`${req.method} ${url.pathname}`] || ROUTES[`* ${url.pathname}`];
+    if (handler) { await handler(req, res, url); return; }
 
     // 대시보드가 직접 불러오는 정적 파일. 빌드 단계를 두지 않으므로 브라우저가
     // css·js 를 그대로 읽는다. public/ 바로 아래 한 겹만 허용한다 —

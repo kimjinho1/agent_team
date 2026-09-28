@@ -233,53 +233,11 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   const pmPerson = roster.find((p) => ROLE_BY_KEY[p.key]?.watchdog);
   if (pmPerson && !signal.cancelled && budgetLeft() && done.has(idOf(pmPerson))) {
     try {
-      const rows = db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
-
-      // 시작 시각이 있어야 "일한 시간"과 "기다린 시간"을 구분할 수 있다.
-      // 이게 없으면 PM 이 병목의 원인을 짚지 못한다.
-      const ms = (t) => (t ? Date.parse(t + 'Z') : null);
-      const t0 = Math.min(...rows.map((r) => ms(r.started_at)).filter(Boolean));
-      const rel = (t) => {
-        const v = ms(t);
-        if (!v || !Number.isFinite(t0)) return '—';
-        const sec = Math.round((v - t0) / 1000);
-        return `+${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
-      };
-
-      const table = rows.map((r) => {
-        const secs = ms(r.started_at) && ms(r.completed_at)
-          ? Math.round((ms(r.completed_at) - ms(r.started_at)) / 1000) : 0;
-
-        // 선행이 다 끝난 시각부터 이 사람이 시작한 시각까지가 대기 시간이다
-        const person = roster.find((p) => personTitle(p) === r.role);
-        const deps = person ? personDeps(person, roster) : [];
-        const depDone = deps
-          .map((d) => rows.find((x) => x.role === personTitle(d)))
-          .map((x) => ms(x?.completed_at))
-          .filter(Boolean);
-        const readyAt = depDone.length ? Math.max(...depDone) : t0;
-        const waited = ms(r.started_at) && readyAt
-          ? Math.max(0, Math.round((ms(r.started_at) - readyAt) / 1000)) : 0;
-
-        return `| ${r.role} | ${r.status} | ${rel(r.started_at)} | ${rel(r.completed_at)} | ${Math.floor(secs / 60)}분 ${secs % 60}초 | ${waited}초 | $${(r.cost_usd || 0).toFixed(2)} | ${r.attempt || 0}회 | ${r.assignment || '전체'} |`;
-      }).join('\n');
-
-      const wall = (() => {
-        const ends = rows.map((r) => ms(r.completed_at)).filter(Boolean);
-        if (!ends.length || !Number.isFinite(t0)) return '—';
-        const sec = Math.round((Math.max(...ends) - t0) / 1000);
-        return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
-      })();
-
+      const rows = db
+        .prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
       const res = await runStandup(db, pmPerson, {
         requirement, runDir, taskId,
-        data:
-          `시작(+)·종료(+)는 첫 작업 시작 시점 기준 경과 시간입니다.\n` +
-          `대기는 선행 작업이 모두 끝난 뒤 이 사람이 시작하기까지 걸린 시간입니다.\n\n` +
-          `| 담당자 | 상태 | 시작 | 종료 | 소요 | 대기 | 비용 | 재작업 | 맡은 범위 |\n` +
-          `|---|---|---|---|---|---|---|---|---|\n${table}\n\n` +
-          `실제 경과 시간(첫 시작~마지막 종료): ${wall}\n` +
-          `재작업 라운드: ${round}회 · 팀 규모: ${roster.length}명`,
+        data: buildTimingReport(rows, roster, round),
       });
       totalCost += res.cost;
     } catch { /* 점검 실패가 실행을 망치지는 않는다 */ }
@@ -317,6 +275,59 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   });
 
   return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
+}
+
+/**
+ * PM 에게 넘길 실측 표.
+ *
+ * "일한 시간"과 "기다린 시간"을 나눠서 준다. 둘을 구분하지 못하면 병목이
+ * 순서 문제인지 작업량 문제인지 알 수 없고, 해법이 달라진다.
+ */
+function buildTimingReport(rows, roster, round) {
+  const ms = (t) => (t ? Date.parse(t + 'Z') : null);
+  const starts = rows.map((r) => ms(r.started_at)).filter(Boolean);
+  const t0 = starts.length ? Math.min(...starts) : NaN;
+
+  const mmss = (sec) => `${Math.floor(sec / 60)}분 ${sec % 60}초`;
+  const rel = (t) => {
+    const v = ms(t);
+    if (!v || !Number.isFinite(t0)) return '—';
+    const sec = Math.round((v - t0) / 1000);
+    return `+${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  };
+
+  // 선행이 다 끝난 시각부터 본인이 시작한 시각까지가 대기 시간이다
+  const waitedFor = (r) => {
+    const person = roster.find((p) => personTitle(p) === r.role);
+    const depEnds = (person ? personDeps(person, roster) : [])
+      .map((d) => rows.find((x) => x.role === personTitle(d)))
+      .map((x) => ms(x?.completed_at))
+      .filter(Boolean);
+    const readyAt = depEnds.length ? Math.max(...depEnds) : t0;
+    return ms(r.started_at) && readyAt
+      ? Math.max(0, Math.round((ms(r.started_at) - readyAt) / 1000))
+      : 0;
+  };
+
+  const table = rows.map((r) => {
+    const secs = ms(r.started_at) && ms(r.completed_at)
+      ? Math.round((ms(r.completed_at) - ms(r.started_at)) / 1000) : 0;
+    return `| ${r.role} | ${r.status} | ${rel(r.started_at)} | ${rel(r.completed_at)} | ` +
+      `${mmss(secs)} | ${waitedFor(r)}초 | $${(r.cost_usd || 0).toFixed(2)} | ` +
+      `${r.attempt || 0}회 | ${r.assignment || '전체'} |`;
+  }).join('\n');
+
+  const ends = rows.map((r) => ms(r.completed_at)).filter(Boolean);
+  const wall = ends.length && Number.isFinite(t0)
+    ? mmss(Math.round((Math.max(...ends) - t0) / 1000))
+    : '—';
+
+  return `시작(+)·종료(+)는 첫 작업 시작 시점 기준 경과 시간입니다.\n` +
+    `대기는 선행 작업이 모두 끝난 뒤 이 사람이 시작하기까지 걸린 시간입니다.\n\n` +
+    `| 담당자 | 상태 | 시작 | 종료 | 소요 | 대기 | 비용 | 재작업 | 맡은 범위 |\n` +
+    `|---|---|---|---|---|---|---|---|---|\n${table}\n\n` +
+    `실제 경과 시간(첫 시작~마지막 종료): ${wall}\n` +
+    `재작업 라운드: ${round}회 · 팀 규모: ${roster.length}명`;
 }
 
 /**

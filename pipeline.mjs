@@ -343,10 +343,29 @@ export async function runPipeline(db, requirement, project, opts = {}) {
     });
   }
 
-  const finalStages = db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
+  recordRun(db, project, {
+    taskId, requirement, kind, status, runDir, roster, reason, outputs, idOf, qaPerson,
+  });
+
+  return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
+}
+
+/**
+ * 실행이 끝난 뒤 남길 기록들.
+ *
+ * 여기서 실패해도 이미 만들어진 산출물은 그대로다. 문서를 못 쓴다고 작업 자체를
+ * 실패로 만들지 않는다.
+ */
+function recordRun(db, project, ctx) {
+  const { taskId, requirement, kind, status, runDir, roster, reason, outputs, idOf, qaPerson } = ctx;
+
+  const finalStages = db
+    .prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
   writeRunDocs(runDir, { taskId, requirement, status, stages: finalStages, roster, reason });
+
   // 이번에 정한 계약을 프로젝트 차원에 남긴다 (다음 작업이 이어받는다)
-  const contractPerson = roster.find((p) => p.key === 'lead') || roster.find((p) => p.key === 'architect');
+  const contractPerson = roster.find((p) => p.key === 'lead')
+    || roster.find((p) => p.key === 'architect');
   if (contractPerson && outputs[idOf(contractPerson)] && status !== 'cancelled') {
     try {
       appendContract(project, {
@@ -372,8 +391,6 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   writeTrackRecord(project, db);
   writeRunsIndex(project, db);
   writeProjectReadme(project, db);
-
-  return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
 }
 
 // ────────────────────────────────────────────────────────

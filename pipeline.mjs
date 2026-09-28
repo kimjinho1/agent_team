@@ -221,44 +221,13 @@ export async function runPipeline(db, requirement, project, opts = {}) {
     }
   }
 
-  // ── QA FAIL 시 재작업 ─────────────────────────────────
   const qaPerson = roster.find((p) => p.key === 'qa');
-  const builders = roster.filter((p) => BUILDERS.includes(p.key));
-  let round = 0;
-
-  while (
-    !signal.cancelled && budgetLeft() && round < maxRework &&
-    qaPerson && done.has(idOf(qaPerson)) &&
-    /판정:\s*FAIL/.test(outputs[idOf(qaPerson)] || '') &&
-    builders.length > 0 && builders.every((p) => done.has(idOf(p)))
-  ) {
-    round++;
-    const report = outputs[idOf(qaPerson)];
-
-    for (const p of builders) {
-      db.prepare("UPDATE stages SET status = 'pending', step_index = NULL WHERE id = ?")
-        .run(stageIds[idOf(p)]);
-    }
-    await Promise.all(builders.map((p) =>
-      runPerson(db, p, {
-        roster, stageId: stageIds[idOf(p)], requirement, outputs, runDir, signal,
-        feedback: report, attempt: round, getStack: () => stack, codebase, kind, contracts, backlog,
-      })
-        .then((res) => { outputs[idOf(p)] = res.output; totalCost += res.cost; })
-        .catch(() => { failed.add(idOf(p)); })
-    ));
-
-    db.prepare("UPDATE stages SET status = 'pending', step_index = NULL WHERE id = ?")
-      .run(stageIds[idOf(qaPerson)]);
-    try {
-      const res = await runPerson(db, qaPerson, {
-        roster, stageId: stageIds[idOf(qaPerson)], requirement, outputs, runDir, signal,
-        attempt: round, getStack: () => stack, codebase, kind, contracts, backlog,
-      });
-      outputs[idOf(qaPerson)] = res.output;
-      totalCost += res.cost;
-    } catch { failed.add(idOf(qaPerson)); break; }
-  }
+  const round = await runReworkLoop(db, {
+    roster, outputs, done, failed, stageIds, idOf,
+    requirement, runDir, signal, maxRework, budgetLeft,
+    getStack: () => stack, codebase, kind, contracts, backlog,
+    onCost: (c) => { totalCost += c; },
+  });
 
   // PM이 있으면 마지막에 진행을 점검한다 (실제 소요·재작업 데이터를 근거로)
   const pmPerson = roster.find((p) => ROLE_BY_KEY[p.key]?.watchdog);
@@ -348,6 +317,65 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   });
 
   return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
+}
+
+/**
+ * QA 가 FAIL 을 내면 구현자들이 다시 만들고 QA 가 다시 본다.
+ *
+ * 몇 번이고 돌면 돈이 끝없이 나가므로 maxRework 로 막고, 매 회차마다 예산과
+ * 중단 신호를 다시 확인한다. 비용은 onCost 로 바깥에 알려야 예산 계산이 맞는다.
+ *
+ * outputs / failed 는 바깥 것을 그대로 고친다. 재작업 결과가 이후 단계에
+ * 반영되어야 하기 때문이다.
+ */
+async function runReworkLoop(db, ctx) {
+  const {
+    roster, outputs, done, failed, stageIds, idOf,
+    requirement, runDir, signal, maxRework, budgetLeft,
+    getStack, codebase, kind, contracts, backlog, onCost,
+  } = ctx;
+
+  const qaPerson = roster.find((p) => p.key === 'qa');
+  const builders = roster.filter((p) => BUILDERS.includes(p.key));
+  const resetStage = db.prepare(
+    "UPDATE stages SET status = 'pending', step_index = NULL WHERE id = ?"
+  );
+  let round = 0;
+
+  const needsRework = () =>
+    !signal.cancelled && budgetLeft() && round < maxRework &&
+    qaPerson && done.has(idOf(qaPerson)) &&
+    /판정:\s*FAIL/.test(outputs[idOf(qaPerson)] || '') &&
+    builders.length > 0 && builders.every((p) => done.has(idOf(p)));
+
+  while (needsRework()) {
+    round++;
+    const report = outputs[idOf(qaPerson)];
+    const shared = {
+      roster, requirement, outputs, runDir, signal,
+      getStack, codebase, kind, contracts, backlog,
+    };
+
+    builders.forEach((p) => resetStage.run(stageIds[idOf(p)]));
+    await Promise.all(builders.map((p) =>
+      runPerson(db, p, {
+        ...shared, stageId: stageIds[idOf(p)], feedback: report, attempt: round,
+      })
+        .then((res) => { outputs[idOf(p)] = res.output; onCost(res.cost); })
+        .catch(() => { failed.add(idOf(p)); })
+    ));
+
+    resetStage.run(stageIds[idOf(qaPerson)]);
+    try {
+      const res = await runPerson(db, qaPerson, {
+        ...shared, stageId: stageIds[idOf(qaPerson)], attempt: round,
+      });
+      outputs[idOf(qaPerson)] = res.output;
+      onCost(res.cost);
+    } catch { failed.add(idOf(qaPerson)); break; }
+  }
+
+  return round;
 }
 
 /**

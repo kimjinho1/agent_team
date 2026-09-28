@@ -66,17 +66,12 @@ function orgChart() {
     .join('\n');
 }
 
-export function writeCharter(workspace) {
-  const dir = orgDir(workspace);
-  fs.mkdirSync(path.join(dir, 'roles'), { recursive: true });
-
-  const consumers = (key) =>
-    ROLES.filter((r) => r.deps.includes(key)).map((r) => r.label);
-
+/** 회사 운영 규칙 — ORG.md 본문 */
+function orgDoc() {
   const byCat = {};
   ROLES.forEach((r) => { (byCat[r.category] = byCat[r.category] || []).push(r); });
 
-  const body = `# 이 회사는 어떻게 일하는가
+  return `# 이 회사는 어떻게 일하는가
 
 일감 하나를 받아 **동작하는 산출물**까지 만든다.
 고정된 팀은 없다. 일을 받을 때마다 **필요한 직무를 필요한 인원만큼 고용**한다.
@@ -121,14 +116,16 @@ agent-org/
 
 각 문서는 설명을 늘리지 않고 **다음 사람이 일을 시작할 최소 정보**만 담는다.
 `;
-  fs.writeFileSync(path.join(dir, 'ORG.md'), body);
+}
 
-  ROLES.forEach((role, i) => {
-    const from = role.deps.length
-      ? role.deps.map((d) => `\`${ROLE_BY_KEY[d].artifact}\` (${ROLE_BY_KEY[d].label})`).join('\n- ')
-      : '사용자 요구사항 한 줄';
-    const to = consumers(role.key);
-    const md = `# ${role.label}
+/** 직무 정의서 한 장 — 무엇을 받아 무엇을 내고 누구에게 넘기는지 */
+function roleDoc(role) {
+  const from = role.deps.length
+    ? role.deps.map((d) => `\`${ROLE_BY_KEY[d].artifact}\` (${ROLE_BY_KEY[d].label})`).join('\n- ')
+    : '사용자 요구사항 한 줄';
+  const to = ROLES.filter((r) => r.deps.includes(role.key)).map((r) => r.label);
+
+  return `# ${role.label}
 
 > ${role.systemPrompt.split('\n')[0]}
 
@@ -147,7 +144,16 @@ ${(role.steps || []).map((s, k) => `${k + 1}. **${s.label}** — ${s.prompt.spli
 ## 지키는 것
 ${role.systemPrompt.split('\n').slice(1).filter(Boolean).map((l) => `- ${l.trim()}`).join('\n') || '- 위 역할 정의를 따른다'}
 `;
-    fs.writeFileSync(path.join(dir, 'roles', `${pad(i + 1)}-${role.key}.md`), md);
+}
+
+/** 회사 규칙과 직무 정의서를 보관 폴더에 깐다 */
+export function writeCharter(workspace) {
+  const dir = orgDir(workspace);
+  fs.mkdirSync(path.join(dir, 'roles'), { recursive: true });
+
+  fs.writeFileSync(path.join(dir, 'ORG.md'), orgDoc());
+  ROLES.forEach((role, i) => {
+    fs.writeFileSync(path.join(dir, 'roles', `${pad(i + 1)}-${role.key}.md`), roleDoc(role));
   });
 }
 

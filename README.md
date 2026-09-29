@@ -8,6 +8,14 @@ cd ~/my-project
 agent-org            # → http://localhost:4747
 ```
 
+![대시보드 — 요구사항을 받은 팀이 일하는 모습](docs/screenshots/dashboard.png)
+
+작업실 책상에 앉아 있으면 일하는 중, 휴게실 침대에 누워 있으면 대기·완료다. 아래 카드에서 각자 진행 단계와 산출물을 본다.
+
+<img src="docs/screenshots/staffing.png" width="560" alt="팀 편성 — 요구사항에 맞춰 필요한 인원만 뽑는다">
+
+업무를 지시하면 요구사항 크기에 맞춰 필요한 사람만 뽑고, 일하는 순서를 보여준 뒤 시작한다.
+
 소스 구조와 동작 원리는 [`docs/how-it-works.html`](docs/how-it-works.html) 을 브라우저로 열면 된다.
 
 ---

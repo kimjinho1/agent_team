@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { ROLE_BY_KEY, BUILDERS, artifactOf, REVIEW_LENS } from './roles.mjs';
+import { ROLE_BY_KEY, BUILDERS, REVIEW_LENS } from './roles.mjs';
 import { parseStack, fillGaps, stackBrief, DEFAULT_STACK } from './stack.mjs';
 import { orgDir } from './db.mjs';
 import { hireTeam, personTitle, personDeps } from './staffing.mjs';

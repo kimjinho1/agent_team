@@ -28,11 +28,11 @@ try {
 dotenv.config({ path: path.join(cwd, '.env') });
 dotenv.config({ path: path.join(pkgRoot, '.env') });
 
-const { startServer } = await import('../server.mjs');
-const { openDb } = await import('../db.mjs');
-const { resolveProject, listProjects, renameProject, forgetProject, homeDir } = await import('../projects.mjs');
-const { listBranches, deleteBranch, mergeBranch, baseBranch } = await import('../git.mjs');
-const { runPipeline } = await import('../pipeline.mjs');
+const { startServer } = await import('../src/server.mjs');
+const { openDb } = await import('../src/db.mjs');
+const { resolveProject, listProjects, renameProject, forgetProject, homeDir } = await import('../src/projects.mjs');
+const { listBranches, deleteBranch, mergeBranch, baseBranch } = await import('../src/git.mjs');
+const { runPipeline } = await import('../src/pipeline.mjs');
 
 const args = process.argv.slice(2);
 

@@ -288,21 +288,32 @@ agent-org --rework 0           # 재작업 생략
 
 ## 파일 구조
 
+```
+agent-org/
+├── README.md, package.json, .gitignore   설정과 문서만
+├── bin/agent-org.mjs                     CLI 진입점
+├── src/                                  모든 로직
+├── public/                               대시보드 (빌드 없음)
+└── docs/how-it-works.html                동작 원리 설명
+```
+
 | 파일 | 역할 |
 |---|---|
-| `roles.mjs` | **조직의 단일 진실.** 직무·의존·단계·프롬프트 정의 |
-| `staffing.mjs` | 일감을 보고 팀을 꾸린다 (성격 판단 포함) |
-| `stack.mjs` | 기술 스택 결정을 읽어 파일명으로 바꾼다 |
-| `onboarding.mjs` | 기존 코드 파악 (읽기 전용) |
-| `history.mjs` | git 내력 추출 (모델 안 씀) |
-| `pipeline.mjs` | 실행 엔진 — 병렬 스케줄·검토·재작업·예산 |
-| `contracts.mjs` | 계약 누적 |
-| `backlog.mjs` | 미룬 일 누적 |
-| `git.mjs` | 브랜치·커밋·정리 (안전장치) |
-| `projects.mjs` | 프로젝트 식별·등록 |
-| `docs.mjs` | 문서 자동 생성 |
-| `db.mjs` | SQLite 스키마 |
-| `server.mjs` | HTTP + SSE + API |
-| `public/dashboard.html` | 대시보드 (자체 포함, 빌드 없음) |
+| `src/roles.mjs` | **조직의 단일 진실.** 직무·의존·단계·프롬프트 정의 |
+| `src/staffing.mjs` | 일감을 보고 팀을 꾸린다 (성격 판단 포함) |
+| `src/stack.mjs` | 기술 스택 결정을 읽어 파일명으로 바꾼다 |
+| `src/onboarding.mjs` | 기존 코드 파악 (읽기 전용) |
+| `src/history.mjs` | git 내력 추출 (모델 안 씀) |
+| `src/pipeline.mjs` | 실행 엔진 — 병렬 스케줄·검토·재작업·예산 |
+| `src/contracts.mjs` | 계약 누적 |
+| `src/backlog.mjs` | 미룬 일 누적 |
+| `src/git.mjs` | 브랜치·커밋·정리 (안전장치) |
+| `src/projects.mjs` | 프로젝트 식별·등록 |
+| `src/docs.mjs` | 문서 자동 생성 |
+| `src/db.mjs` | SQLite 스키마 |
+| `src/server.mjs` | HTTP + SSE + API |
+| `public/dashboard.html` | 대시보드 화면과 앱 로직 |
+| `public/pixel.js` | 픽셀 아트 그리기 함수 |
+| `public/dashboard.css` | 대시보드 스타일 |
 
-직무를 추가하려면 `roles.mjs` 에 항목을 넣으면 된다. 문서·대시보드·파이프라인이 알아서 따라간다.
+직무를 추가하려면 `src/roles.mjs` 에 항목을 넣으면 된다. 문서·대시보드·파이프라인이 알아서 따라간다.

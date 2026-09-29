@@ -15,6 +15,9 @@ import { CATALOG, ROLE_BY_KEY } from './roles.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** 대시보드 파일이 있는 곳 — 이 파일은 src/ 안에 있으므로 한 단계 위다 */
+const publicDir = path.resolve(__dirname, '..', 'public');
+
 /** public/ 에서 내보낼 파일 종류 */
 const STATIC_TYPES = { '.css': 'text/css', '.js': 'text/javascript' };
 
@@ -186,7 +189,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
   // / 와 /index.html 이 같은 페이지를 내보내므로 처리기를 하나만 둔다
   const serveDashboard = (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(fs.readFileSync(path.join(__dirname, 'public', 'dashboard.html')));
+    res.end(fs.readFileSync(path.join(publicDir, 'dashboard.html')));
   };
 
   const ROUTES = {
@@ -464,7 +467,7 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
     // 이름에 / 가 들어가면 거부하므로 상위 경로로 나갈 방법이 없다.
     const name = url.pathname.slice(1);
     if (STATIC_TYPES[path.extname(name)] && !name.includes('/')) {
-      const target = path.join(__dirname, 'public', name);
+      const target = path.join(publicDir, name);
       if (fs.existsSync(target)) {
         res.writeHead(200, { 'Content-Type': `${STATIC_TYPES[path.extname(name)]}; charset=utf-8` });
         res.end(fs.readFileSync(target));

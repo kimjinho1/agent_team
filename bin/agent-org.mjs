@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs';
-import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,8 +24,12 @@ try {
 
 // Credentials may live next to the install or in the folder you run from.
 // Load the current folder first so a project can override, then fall back.
-dotenv.config({ path: path.join(cwd, '.env') });
-dotenv.config({ path: path.join(pkgRoot, '.env') });
+// 없는 파일은 넘긴다 — dotenv 와 달리 loadEnvFile 은 ENOENT 를 던진다.
+const loadEnv = (dir) => {
+  try { process.loadEnvFile(path.join(dir, '.env')); } catch { /* 없으면 넘김 */ }
+};
+loadEnv(cwd);
+loadEnv(pkgRoot);
 
 const { startServer } = await import('../src/server.mjs');
 const { openDb } = await import('../src/db.mjs');

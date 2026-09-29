@@ -48,6 +48,13 @@
 
 <script src="/pixel.js"></script>
   <script>
+  // 아바타에 쓰는 짧은 이름. 픽셀 그리기와 무관해서 앱 쪽에 둔다.
+  const ROLE_INITIALS = {
+    ceo: '사장', pm: 'PM', planner: '기획', researcher: '리서',
+    designer: '디자', lead: '리드', architect: '아키', fe: 'FE', be: 'BE',
+    mobile: '모바', data: '데이', ml: 'ML', devops: 'Ops',
+    security: '보안', qa: 'QA', writer: '문서',
+  };
   // 자리는 고용된 인원수에 맞춰 만든다
   function layout(n) {
     const deskCols = n <= 4 ? 2 : 3;

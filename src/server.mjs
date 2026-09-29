@@ -170,15 +170,10 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
     };
   }
 
-  function readJsonBody(req) {
-    return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', (c) => (body += c));
-      req.on('end', () => {
-        try { resolve(body ? JSON.parse(body) : {}); } catch (e) { reject(e); }
-      });
-      req.on('error', reject);
-    });
+  async function readJsonBody(req) {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    return body ? JSON.parse(body) : {};
   }
 
   // 경로별 처리기. "METHOD 경로" 를 먼저 찾고 없으면 "* 경로" 를 찾는다 —

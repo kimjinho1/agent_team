@@ -15,12 +15,6 @@ const ROLE_COLORS = {
   data: '#c98cf0', ml: '#f08ac9', devops: '#6ac9e0',
   security: '#d95f5f', qa: '#f0a23d', writer: '#9fb3c8',
 };
-const ROLE_INITIALS = {
-  ceo: '사장', pm: 'PM', planner: '기획', researcher: '리서',
-  designer: '디자', lead: '리드', architect: '아키', fe: 'FE', be: 'BE',
-  mobile: '모바', data: '데이', ml: 'ML', devops: 'Ops',
-  security: '보안', qa: 'QA', writer: '문서',
-};
 const LOOKS = {
   ceo: { hair: '#5a5a5a', hi: '#7c7c7c', style: 5 },
   pm: { hair: '#3a2a1c', hi: '#54402c', style: 0 },

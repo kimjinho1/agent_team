@@ -22,7 +22,7 @@ function tryGit(repoPath, args, fallback = null) {
   try { return git(repoPath, args); } catch { return fallback; }
 }
 
-export function isRepo(repoPath) {
+function isRepo(repoPath) {
   return tryGit(repoPath, ['rev-parse', '--is-inside-work-tree']) === 'true';
 }
 

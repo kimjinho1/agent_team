@@ -384,9 +384,6 @@ export const ROLE_BY_KEY = Object.fromEntries(CATALOG.map((r) => [r.key, r]));
 /** 무언가를 실제로 만들어내는 직무 */
 export const BUILDERS = ['fe', 'be', 'mobile', 'data', 'ml'];
 
-/** 기술 스택을 결정할 수 있는 직무 (앞에 있는 사람이 우선) */
-export const STACK_DECIDERS = CATALOG.filter((r) => r.decidesStack).map((r) => r.key);
-
 /** 스택이 정해지면 그 파일명을, 아니면 기본값을 쓴다 */
 export function artifactOf(roleKey, stack) {
   const role = ROLE_BY_KEY[roleKey];
@@ -394,6 +391,3 @@ export function artifactOf(roleKey, stack) {
   const entry = role.stackKey && stack?.[role.stackKey]?.entry;
   return entry || role.defaultArtifact;
 }
-
-// 이전 이름 호환
-export const ROLES = CATALOG;

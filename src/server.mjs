@@ -116,8 +116,6 @@ export function startServer({ workspace, port = 4747, budget = 0, maxRework = 1,
     const stages = task
       ? db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(task.id)
       : [];
-    const byRole = Object.fromEntries(stages.map((s) => [s.role, s]));
-
     const employees = stages.map((st) => {
       const role = ROLE_BY_KEY[st.role_key] || {};
       const cum = cumMap[st.role] || {

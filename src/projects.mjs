@@ -15,11 +15,13 @@ export function homeDir() {
   return process.env.AGENT_ORG_HOME || path.join(os.homedir(), '.agent-org');
 }
 
-/** 작업 폴더 아래의 git repo 들을 찾는다 (너무 깊이 들어가지 않는다) */
-export function scanRepos(workspace, maxDepth = 2) {
+/** 작업 폴더 아래의 git repo 들을 찾는다 (두 단계까지만 내려간다) */
+const MAX_DEPTH = 2;
+
+function scanRepos(workspace) {
   const found = [];
   const walk = (dir, depth) => {
-    if (depth > maxDepth) return;
+    if (depth > MAX_DEPTH) return;
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });

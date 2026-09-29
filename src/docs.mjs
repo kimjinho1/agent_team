@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CATALOG, ROLE_BY_KEY, artifactOf } from './roles.mjs';
-const ROLES = CATALOG;
 import { orgDir } from './db.mjs';
 const KEEP_RUNS = 20;   // 그 위로는 _archive 로 내린다
 
@@ -13,7 +12,7 @@ const pad = (n) => String(n).padStart(2, '0');
 
 /** `06-fe1-index.html` — 순서와 담당자가 파일명에 드러난다 */
 export function artifactName(person, stack) {
-  const i = ROLES.findIndex((r) => r.key === person.key);
+  const i = CATALOG.findIndex((r) => r.key === person.key);
   const who = person.total > 1 ? `${person.key}${person.instance + 1}` : person.key;
   // 기록 폴더는 평탄하게 둔다. src/server.js 같은 실제 경로는 스택에 남아 있고,
   // 코드가 repo 로 갈 때 그 경로를 쓴다.
@@ -41,8 +40,7 @@ export function repoPathOf(person, stack) {
 
 /** 회사 운영 규칙 — ORG.md 본문 */
 function orgDoc() {
-  const byCat = {};
-  ROLES.forEach((r) => { (byCat[r.category] = byCat[r.category] || []).push(r); });
+  const byCat = Object.groupBy(CATALOG, (r) => r.category);
 
   return `# 이 회사는 어떻게 일하는가
 
@@ -58,7 +56,7 @@ function orgDoc() {
 5. **같은 직무도 여럿일 수 있다.** 일이 충분히 크면 범위를 쪼개 나눠 맡는다.
 6. **판정은 근거를 댄다.** QA는 재현 경로 없는 지적을 하지 않는다. FAIL이면 다시 만든다.
 
-## 고용 가능한 직무 (${ROLES.length}종)
+## 고용 가능한 직무 (${CATALOG.length}종)
 
 ${Object.entries(byCat).map(([cat, list]) => `### ${cat}
 
@@ -96,7 +94,7 @@ function roleDoc(role) {
   const from = role.deps.length
     ? role.deps.map((d) => `\`${ROLE_BY_KEY[d].artifact}\` (${ROLE_BY_KEY[d].label})`).join('\n- ')
     : '사용자 요구사항 한 줄';
-  const to = ROLES.filter((r) => r.deps.includes(role.key)).map((r) => r.label);
+  const to = CATALOG.filter((r) => r.deps.includes(role.key)).map((r) => r.label);
 
   return `# ${role.label}
 
@@ -125,7 +123,7 @@ export function writeCharter(workspace) {
   fs.mkdirSync(path.join(dir, 'roles'), { recursive: true });
 
   fs.writeFileSync(path.join(dir, 'ORG.md'), orgDoc());
-  ROLES.forEach((role, i) => {
+  CATALOG.forEach((role, i) => {
     fs.writeFileSync(path.join(dir, 'roles', `${pad(i + 1)}-${role.key}.md`), roleDoc(role));
   });
 }
@@ -187,7 +185,7 @@ ${verdict === 'FAIL' ? '> QA가 **FAIL** 판정했다. 상세 근거와 PASS 조
 누가 무엇을 만들어 누구에게 넘겼는지.
 
 ${stages.map((s) => {
-  const to = ROLES.filter((x) => x.deps.includes(s.role_key) && present.has(x.key)).map((x) => x.label);
+  const to = CATALOG.filter((x) => x.deps.includes(s.role_key) && present.has(x.key)).map((x) => x.label);
   const head = (s.output || '').split('\n').find((l) => l.trim()) || '';
   return `## ${s.role} → ${to.join(', ') || '(종료)'}
 - 맡은 범위: ${s.assignment || '전체'}
@@ -361,7 +359,7 @@ export function writeTrackRecord(project, db) {
 
 | 역할 | 처리 | 누적 비용 | 건당 평균 |
 |---|---|---|---|
-${ROLES.map((r) => {
+${CATALOG.map((r) => {
   const m = roleMap[r.label];
   return `| ${r.label} | ${m ? m.n : 0} | $${(m ? m.cost : 0).toFixed(2)} | $${(m ? m.avg_cost : 0).toFixed(2)} |`;
 }).join('\n')}

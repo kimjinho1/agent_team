@@ -37,34 +37,7 @@ export function repoPathOf(person, stack) {
   return dir === '.' ? name : path.join(dir, name);
 }
 
-function depthMap() {
-  const depth = {};
-  const of = (r) => {
-    if (depth[r.key] != null) return depth[r.key];
-    depth[r.key] = r.deps.length ? 1 + Math.max(...r.deps.map((d) => of(ROLE_BY_KEY[d]))) : 0;
-    return depth[r.key];
-  };
-  ROLES.forEach(of);
-  return depth;
-}
-
-/** Roles grouped by dependency depth — each group can run at the same time. */
-export function waves() {
-  const depth = depthMap();
-  const out = [];
-  ROLES.forEach((r) => {
-    (out[depth[r.key]] = out[depth[r.key]] || []).push(r);
-  });
-  return out;
-}
-
 // ---------------------------------------------------------------- charter
-
-function orgChart() {
-  return waves()
-    .map((w, i) => `  ${i + 1}차  ${w.map((r) => r.label).join(' , ')}`)
-    .join('\n');
-}
 
 /** 회사 운영 규칙 — ORG.md 본문 */
 function orgDoc() {

@@ -10,7 +10,6 @@ import { hireTeam, personTitle, KIND_GUIDE } from './staffing.mjs';
 import { codebaseBrief, needsOnboarding, runOnboarding, hasExistingCode } from './onboarding.mjs';
 import { checkWritable } from './git.mjs';
 import { repoHistory } from './history.mjs';
-import { hasContracts } from './contracts.mjs';
 import { backlogStats, openItems } from './backlog.mjs';
 import { CATALOG, ROLE_BY_KEY } from './roles.mjs';
 

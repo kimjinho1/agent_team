@@ -192,13 +192,3 @@ export function mergeBranch(repoPath, name) {
   }
 }
 
-/** 어느 repo 에 무엇을 썼는지 한 줄 요약 */
-export function describeResult(results) {
-  return results
-    .map((r) =>
-      r.committed
-        ? `${r.repo}: ${r.branch} (${r.sha}) — 파일 ${r.files.length}개`
-        : `${r.repo}: 변경 없음`
-    )
-    .join('\n');
-}

@@ -90,7 +90,3 @@ export function contractsBrief(project, { recent = 1, limit = 5000 } = {}) {
   );
   return parts.join('\n\n');
 }
-
-export function hasContracts(project) {
-  return fs.existsSync(file(project));
-}

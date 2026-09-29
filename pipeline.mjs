@@ -11,7 +11,7 @@ import { appendContract, contractsBrief } from './contracts.mjs';
 import { collectDeferred, appendBacklog, backlogBrief } from './backlog.mjs';
 import { artifactName, repoPathOf, writeCharter, writeRunDocs, appendKnowledge, writeTrackRecord,
          writeProjectReadme, writeRunsIndex } from './docs.mjs';
-import { checkWritable, startBranch, returnTo, writeIntoRepo, commitAll, describeResult } from './git.mjs';
+import { checkWritable, startBranch, returnTo, writeIntoRepo, commitAll } from './git.mjs';
 import { KIND_GUIDE } from './staffing.mjs';
 
 /**

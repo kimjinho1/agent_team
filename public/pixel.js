@@ -377,14 +377,6 @@ function drawMonitor(p, x, y, working, t) {
   p(x + 7, y + 18, 12, 2, '#9aa3b0');
 }
 
-function drawLamp(p, x, y, on) {
-  p(x + 4, y + 16, 8, 3, '#6a7382');
-  p(x + 7, y + 6, 2, 11, '#8a93a5');
-  p(x + 2, y + 1, 11, 6, on ? '#ffd23d' : '#8a93a5');
-  p(x + 2, y + 1, 11, 2, on ? '#ffe98a' : '#a3abb8');
-  if (on) p(x + 3, y + 7, 9, 3, '#ffe06633');
-}
-
 function drawMug(p, x, y, hot, f) {
   p(x, y + 2, 8, 8, '#e8ecf2');
   p(x, y + 2, 8, 2, '#ffffff');

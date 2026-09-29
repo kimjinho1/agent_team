@@ -57,16 +57,11 @@ const MIGRATIONS = [
  * 반쪽이 된다. 코드 변경만 각 repo 의 브랜치로 간다.
  */
 export function orgDir(project) {
-  if (typeof project === 'string') return project;   // 이미 경로면 그대로
   return project.dir;
 }
 
-export function stateDir(project) {
-  return path.join(orgDir(project), '.state');
-}
-
 export function openDb(project) {
-  const dir = stateDir(project);
+  const dir = path.join(orgDir(project), '.state');
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, 'agent-org.db'));
   db.pragma('journal_mode = WAL');

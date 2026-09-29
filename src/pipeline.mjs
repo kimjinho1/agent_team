@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { ROLE_BY_KEY, BUILDERS, artifactOf, REVIEW_LENS } from './roles.mjs';
+import { ROLE_BY_KEY, BUILDERS, REVIEW_LENS } from './roles.mjs';
 import { parseStack, fillGaps, stackBrief, DEFAULT_STACK } from './stack.mjs';
 import { orgDir } from './db.mjs';
 import { hireTeam, personTitle, personDeps } from './staffing.mjs';
@@ -11,7 +11,7 @@ import { appendContract, contractsBrief } from './contracts.mjs';
 import { collectDeferred, appendBacklog, backlogBrief } from './backlog.mjs';
 import { artifactName, repoPathOf, writeCharter, writeRunDocs, appendKnowledge, writeTrackRecord,
          writeProjectReadme, writeRunsIndex } from './docs.mjs';
-import { checkWritable, startBranch, returnTo, writeIntoRepo, commitAll, describeResult } from './git.mjs';
+import { checkWritable, startBranch, returnTo, writeIntoRepo, commitAll } from './git.mjs';
 import { KIND_GUIDE } from './staffing.mjs';
 
 /**
@@ -103,22 +103,8 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   db.prepare('UPDATE tasks SET run_dir = ? WHERE id = ?').run(runDir, taskId);
 
   // ── 온보딩 ────────────────────────────────────────────
-  // 이미 굴러가던 프로젝트면 코드를 먼저 읽는다. 모르는 채로 만들면
-  // 기존 관례를 무시한 코드가 나온다.
-  let onboardCost = 0;
   const repos = project.repos || [];
-  if (!signal.cancelled && needsOnboarding(project, repos)) {
-    console.log('  기존 코드 파악 중…');
-    db.prepare("UPDATE tasks SET status = 'onboarding' WHERE id = ?").run(taskId);
-    try {
-      const r = await runOnboarding(project, repos, { signal });
-      onboardCost = r.cost;
-      if (r.ok) console.log('  코드베이스 파악 완료 → knowledge/CODEBASE.md');
-    } catch (e) {
-      console.warn('  코드 파악 실패 (계속 진행):', e.message);
-    }
-    db.prepare("UPDATE tasks SET status = 'running' WHERE id = ?").run(taskId);
-  }
+  const onboardCost = await onboardIfNeeded(db, project, repos, { taskId, signal });
 
   // ── 채용 ──────────────────────────────────────────────
   // 브리핑에서 이미 팀을 짰으면 다시 뽑지 않는다 (같은 값에 두 번 낼 이유가 없다)
@@ -159,158 +145,34 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   const outputs = {};            // "fe#0" -> 산출물
   const done = new Set();
   const failed = new Set();
-  const running = new Map();
-  let overBudget = false;
   const budgetLeft = () => budget <= 0 || totalCost < budget;
 
-  const ready = () =>
-    roster.filter((p) => {
-      const id = idOf(p);
-      if (done.has(id) || failed.has(id) || running.has(id)) return false;
-      return personDeps(p, roster).every((d) => done.has(idOf(d)));
-    });
+  const exec = await runExecutionLoop(db, {
+    roster, outputs, done, failed, stageIds, idOf, taskId,
+    requirement, runDir, signal, budgetLeft, review,
+    stack, areaOf, codebase, kind, contracts, backlog,
+    onCost: (c) => { totalCost += c; },
+  });
+  stack = exec.stack;
+  const overBudget = exec.overBudget;
 
-  while (done.size + failed.size < roster.length) {
-    if (signal.cancelled) break;
-    if (!budgetLeft()) { overBudget = true; break; }
-
-    for (const p of ready()) {
-      const id = idOf(p);
-      running.set(
-        id,
-        runPerson(db, p, { roster, stageId: stageIds[id], requirement, outputs, runDir, signal,
-          getStack: () => stack, codebase, kind, contracts, backlog })
-          .then(async (res) => {
-            outputs[id] = res.output;
-            totalCost += res.cost;
-
-            // 혼자 확정하지 못한다 — 관련자 승인을 받는다
-            if (review && !signal.cancelled && budgetLeft()) {
-              const gate = await reviewGate(db, p, {
-                roster, stageId: stageIds[id], requirement, runDir, outputs, signal,
-                getStack: () => stack, artifact: res.output,
-              });
-              totalCost += gate.cost;
-              if (gate.revised) outputs[id] = gate.output;
-            }
-            done.add(id);
-            // 스택을 정하는 사람이 끝나면 그 결정을 팀 전체가 따른다
-            if (ROLE_BY_KEY[p.key]?.decidesStack && !stack) {
-              const decided = parseStack(res.output);
-              if (decided) {
-                stack = fillGaps(decided, roster, areaOf);
-                db.prepare('UPDATE tasks SET stack = ? WHERE id = ?').run(JSON.stringify(stack), taskId);
-                console.log(`  기술 스택 확정 (${personTitle(p)})`);
-              }
-            }
-          })
-          .catch(() => { failed.add(id); })
-          .finally(() => { running.delete(id); })
-      );
-    }
-
-    if (running.size === 0) break;
-    await Promise.race(running.values());
-
-    if (!stack && roster.some((p) => areaOf(p.key) && !done.has(idOf(p)))) {
-      const decider = roster.find((p) => ROLE_BY_KEY[p.key]?.decidesStack);
-      if (!decider || done.has(idOf(decider)) || failed.has(idOf(decider))) {
-        stack = fillGaps(DEFAULT_STACK, roster, areaOf);
-        db.prepare('UPDATE tasks SET stack = ? WHERE id = ?').run(JSON.stringify(stack), taskId);
-      }
-    }
-  }
-
-  // ── QA FAIL 시 재작업 ─────────────────────────────────
   const qaPerson = roster.find((p) => p.key === 'qa');
-  const builders = roster.filter((p) => BUILDERS.includes(p.key));
-  let round = 0;
-
-  while (
-    !signal.cancelled && budgetLeft() && round < maxRework &&
-    qaPerson && done.has(idOf(qaPerson)) &&
-    /판정:\s*FAIL/.test(outputs[idOf(qaPerson)] || '') &&
-    builders.length > 0 && builders.every((p) => done.has(idOf(p)))
-  ) {
-    round++;
-    const report = outputs[idOf(qaPerson)];
-
-    for (const p of builders) {
-      db.prepare("UPDATE stages SET status = 'pending', step_index = NULL WHERE id = ?")
-        .run(stageIds[idOf(p)]);
-    }
-    await Promise.all(builders.map((p) =>
-      runPerson(db, p, {
-        roster, stageId: stageIds[idOf(p)], requirement, outputs, runDir, signal,
-        feedback: report, attempt: round, getStack: () => stack, codebase, kind, contracts, backlog,
-      })
-        .then((res) => { outputs[idOf(p)] = res.output; totalCost += res.cost; })
-        .catch(() => { failed.add(idOf(p)); })
-    ));
-
-    db.prepare("UPDATE stages SET status = 'pending', step_index = NULL WHERE id = ?")
-      .run(stageIds[idOf(qaPerson)]);
-    try {
-      const res = await runPerson(db, qaPerson, {
-        roster, stageId: stageIds[idOf(qaPerson)], requirement, outputs, runDir, signal,
-        attempt: round, getStack: () => stack, codebase, kind, contracts, backlog,
-      });
-      outputs[idOf(qaPerson)] = res.output;
-      totalCost += res.cost;
-    } catch { failed.add(idOf(qaPerson)); break; }
-  }
+  const round = await runReworkLoop(db, {
+    roster, outputs, done, failed, stageIds, idOf,
+    requirement, runDir, signal, maxRework, budgetLeft,
+    getStack: () => stack, codebase, kind, contracts, backlog,
+    onCost: (c) => { totalCost += c; },
+  });
 
   // PM이 있으면 마지막에 진행을 점검한다 (실제 소요·재작업 데이터를 근거로)
   const pmPerson = roster.find((p) => ROLE_BY_KEY[p.key]?.watchdog);
   if (pmPerson && !signal.cancelled && budgetLeft() && done.has(idOf(pmPerson))) {
     try {
-      const rows = db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
-
-      // 시작 시각이 있어야 "일한 시간"과 "기다린 시간"을 구분할 수 있다.
-      // 이게 없으면 PM 이 병목의 원인을 짚지 못한다.
-      const ms = (t) => (t ? Date.parse(t + 'Z') : null);
-      const t0 = Math.min(...rows.map((r) => ms(r.started_at)).filter(Boolean));
-      const rel = (t) => {
-        const v = ms(t);
-        if (!v || !Number.isFinite(t0)) return '—';
-        const sec = Math.round((v - t0) / 1000);
-        return `+${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
-      };
-
-      const table = rows.map((r) => {
-        const secs = ms(r.started_at) && ms(r.completed_at)
-          ? Math.round((ms(r.completed_at) - ms(r.started_at)) / 1000) : 0;
-
-        // 선행이 다 끝난 시각부터 이 사람이 시작한 시각까지가 대기 시간이다
-        const person = roster.find((p) => personTitle(p) === r.role);
-        const deps = person ? personDeps(person, roster) : [];
-        const depDone = deps
-          .map((d) => rows.find((x) => x.role === personTitle(d)))
-          .map((x) => ms(x?.completed_at))
-          .filter(Boolean);
-        const readyAt = depDone.length ? Math.max(...depDone) : t0;
-        const waited = ms(r.started_at) && readyAt
-          ? Math.max(0, Math.round((ms(r.started_at) - readyAt) / 1000)) : 0;
-
-        return `| ${r.role} | ${r.status} | ${rel(r.started_at)} | ${rel(r.completed_at)} | ${Math.floor(secs / 60)}분 ${secs % 60}초 | ${waited}초 | $${(r.cost_usd || 0).toFixed(2)} | ${r.attempt || 0}회 | ${r.assignment || '전체'} |`;
-      }).join('\n');
-
-      const wall = (() => {
-        const ends = rows.map((r) => ms(r.completed_at)).filter(Boolean);
-        if (!ends.length || !Number.isFinite(t0)) return '—';
-        const sec = Math.round((Math.max(...ends) - t0) / 1000);
-        return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
-      })();
-
+      const rows = db
+        .prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
       const res = await runStandup(db, pmPerson, {
         requirement, runDir, taskId,
-        data:
-          `시작(+)·종료(+)는 첫 작업 시작 시점 기준 경과 시간입니다.\n` +
-          `대기는 선행 작업이 모두 끝난 뒤 이 사람이 시작하기까지 걸린 시간입니다.\n\n` +
-          `| 담당자 | 상태 | 시작 | 종료 | 소요 | 대기 | 비용 | 재작업 | 맡은 범위 |\n` +
-          `|---|---|---|---|---|---|---|---|---|\n${table}\n\n` +
-          `실제 경과 시간(첫 시작~마지막 종료): ${wall}\n` +
-          `재작업 라운드: ${round}회 · 팀 규모: ${roster.length}명`,
+        data: buildTimingReport(rows, roster, round),
       });
       totalCost += res.cost;
     } catch { /* 점검 실패가 실행을 망치지는 않는다 */ }
@@ -343,10 +205,248 @@ export async function runPipeline(db, requirement, project, opts = {}) {
     });
   }
 
-  const finalStages = db.prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
+  recordRun(db, project, {
+    taskId, requirement, kind, status, runDir, roster, reason, outputs, idOf, qaPerson,
+  });
+
+  return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
+}
+
+/**
+ * 팀을 병렬로 돌린다.
+ *
+ * 선행이 끝난 사람은 바로 시작한다. 순서는 사람 목록이 아니라 의존 관계가
+ * 정한다 — 그래서 FE/BE 처럼 서로 안 기다려도 되는 사람은 동시에 일한다.
+ *
+ * outputs·done·failed 는 호출자와 공유하는 그릇이고, 비용은 onCost 로 넘긴다.
+ * 스택은 이 안에서 확정되므로 최종값을 돌려준다.
+ */
+async function runExecutionLoop(db, ctx) {
+  const { roster, outputs, done, failed, stageIds, idOf, taskId,
+          requirement, runDir, signal, budgetLeft, review,
+          areaOf, codebase, kind, contracts, backlog, onCost } = ctx;
+
+  let stack = ctx.stack;
+  const running = new Map();
+  let overBudget = false;
+
+  const saveStack = (v) => {
+    stack = v;
+    db.prepare('UPDATE tasks SET stack = ? WHERE id = ?').run(JSON.stringify(stack), taskId);
+  };
+
+  const ready = () =>
+    roster.filter((p) => {
+      const id = idOf(p);
+      if (done.has(id) || failed.has(id) || running.has(id)) return false;
+      return personDeps(p, roster).every((d) => done.has(idOf(d)));
+    });
+
+  while (done.size + failed.size < roster.length) {
+    if (signal.cancelled) break;
+    if (!budgetLeft()) { overBudget = true; break; }
+
+    for (const p of ready()) {
+      const id = idOf(p);
+      running.set(
+        id,
+        runPerson(db, p, { roster, stageId: stageIds[id], requirement, outputs, runDir, signal,
+          getStack: () => stack, codebase, kind, contracts, backlog })
+          .then(async (res) => {
+            outputs[id] = res.output;
+            onCost(res.cost);
+
+            // 혼자 확정하지 못한다 — 관련자 승인을 받는다
+            if (review && !signal.cancelled && budgetLeft()) {
+              const gate = await reviewGate(db, p, {
+                roster, stageId: stageIds[id], requirement, runDir, outputs, signal,
+                getStack: () => stack, artifact: res.output,
+              });
+              onCost(gate.cost);
+              if (gate.revised) outputs[id] = gate.output;
+            }
+            done.add(id);
+            // 스택을 정하는 사람이 끝나면 그 결정을 팀 전체가 따른다
+            if (ROLE_BY_KEY[p.key]?.decidesStack && !stack) {
+              const decided = parseStack(res.output);
+              if (decided) {
+                saveStack(fillGaps(decided, roster, areaOf));
+                console.log(`  기술 스택 확정 (${personTitle(p)})`);
+              }
+            }
+          })
+          .catch(() => { failed.add(id); })
+          .finally(() => { running.delete(id); })
+      );
+    }
+
+    if (running.size === 0) break;
+    await Promise.race(running.values());
+
+    // 정할 사람이 실패했거나 이미 끝났는데 스택이 없으면 기본값으로 간다.
+    // 여기서 안 채우면 뒤에 올 구현자들이 스택 없이 시작한다.
+    if (!stack && roster.some((p) => areaOf(p.key) && !done.has(idOf(p)))) {
+      const decider = roster.find((p) => ROLE_BY_KEY[p.key]?.decidesStack);
+      if (!decider || done.has(idOf(decider)) || failed.has(idOf(decider))) {
+        saveStack(fillGaps(DEFAULT_STACK, roster, areaOf));
+      }
+    }
+  }
+
+  return { stack, overBudget };
+}
+
+/**
+ * 이미 굴러가던 프로젝트면 코드를 먼저 읽는다.
+ *
+ * 모르는 채로 만들면 기존 관례를 무시한 코드가 나온다. 다만 파악에 실패해도
+ * 실행은 계속한다 — 아무것도 못 하는 것보다는 낫다.
+ */
+async function onboardIfNeeded(db, project, repos, { taskId, signal }) {
+  if (signal.cancelled || !needsOnboarding(project, repos)) return 0;
+
+  console.log('  기존 코드 파악 중…');
+  db.prepare("UPDATE tasks SET status = 'onboarding' WHERE id = ?").run(taskId);
+  let cost = 0;
+  try {
+    const r = await runOnboarding(project, repos, { signal });
+    cost = r.cost;
+    if (r.ok) console.log('  코드베이스 파악 완료 → knowledge/CODEBASE.md');
+  } catch (e) {
+    console.warn('  코드 파악 실패 (계속 진행):', e.message);
+  }
+  db.prepare("UPDATE tasks SET status = 'running' WHERE id = ?").run(taskId);
+  return cost;
+}
+
+/**
+ * PM 에게 넘길 실측 표.
+ *
+ * "일한 시간"과 "기다린 시간"을 나눠서 준다. 둘을 구분하지 못하면 병목이
+ * 순서 문제인지 작업량 문제인지 알 수 없고, 해법이 달라진다.
+ */
+function buildTimingReport(rows, roster, round) {
+  const ms = (t) => (t ? Date.parse(t + 'Z') : null);
+  const starts = rows.map((r) => ms(r.started_at)).filter(Boolean);
+  const t0 = starts.length ? Math.min(...starts) : NaN;
+
+  const mmss = (sec) => `${Math.floor(sec / 60)}분 ${sec % 60}초`;
+  const rel = (t) => {
+    const v = ms(t);
+    if (!v || !Number.isFinite(t0)) return '—';
+    const sec = Math.round((v - t0) / 1000);
+    return `+${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  };
+
+  // 선행이 다 끝난 시각부터 본인이 시작한 시각까지가 대기 시간이다
+  const waitedFor = (r) => {
+    const person = roster.find((p) => personTitle(p) === r.role);
+    const depEnds = (person ? personDeps(person, roster) : [])
+      .map((d) => rows.find((x) => x.role === personTitle(d)))
+      .map((x) => ms(x?.completed_at))
+      .filter(Boolean);
+    const readyAt = depEnds.length ? Math.max(...depEnds) : t0;
+    return ms(r.started_at) && readyAt
+      ? Math.max(0, Math.round((ms(r.started_at) - readyAt) / 1000))
+      : 0;
+  };
+
+  const table = rows.map((r) => {
+    const secs = ms(r.started_at) && ms(r.completed_at)
+      ? Math.round((ms(r.completed_at) - ms(r.started_at)) / 1000) : 0;
+    return `| ${r.role} | ${r.status} | ${rel(r.started_at)} | ${rel(r.completed_at)} | ` +
+      `${mmss(secs)} | ${waitedFor(r)}초 | $${(r.cost_usd || 0).toFixed(2)} | ` +
+      `${r.attempt || 0}회 | ${r.assignment || '전체'} |`;
+  }).join('\n');
+
+  const ends = rows.map((r) => ms(r.completed_at)).filter(Boolean);
+  const wall = ends.length && Number.isFinite(t0)
+    ? mmss(Math.round((Math.max(...ends) - t0) / 1000))
+    : '—';
+
+  return `시작(+)·종료(+)는 첫 작업 시작 시점 기준 경과 시간입니다.\n` +
+    `대기는 선행 작업이 모두 끝난 뒤 이 사람이 시작하기까지 걸린 시간입니다.\n\n` +
+    `| 담당자 | 상태 | 시작 | 종료 | 소요 | 대기 | 비용 | 재작업 | 맡은 범위 |\n` +
+    `|---|---|---|---|---|---|---|---|---|\n${table}\n\n` +
+    `실제 경과 시간(첫 시작~마지막 종료): ${wall}\n` +
+    `재작업 라운드: ${round}회 · 팀 규모: ${roster.length}명`;
+}
+
+/**
+ * QA 가 FAIL 을 내면 구현자들이 다시 만들고 QA 가 다시 본다.
+ *
+ * 몇 번이고 돌면 돈이 끝없이 나가므로 maxRework 로 막고, 매 회차마다 예산과
+ * 중단 신호를 다시 확인한다. 비용은 onCost 로 바깥에 알려야 예산 계산이 맞는다.
+ *
+ * outputs / failed 는 바깥 것을 그대로 고친다. 재작업 결과가 이후 단계에
+ * 반영되어야 하기 때문이다.
+ */
+async function runReworkLoop(db, ctx) {
+  const {
+    roster, outputs, done, failed, stageIds, idOf,
+    requirement, runDir, signal, maxRework, budgetLeft,
+    getStack, codebase, kind, contracts, backlog, onCost,
+  } = ctx;
+
+  const qaPerson = roster.find((p) => p.key === 'qa');
+  const builders = roster.filter((p) => BUILDERS.includes(p.key));
+  const resetStage = db.prepare(
+    "UPDATE stages SET status = 'pending', step_index = NULL WHERE id = ?"
+  );
+  let round = 0;
+
+  const needsRework = () =>
+    !signal.cancelled && budgetLeft() && round < maxRework &&
+    qaPerson && done.has(idOf(qaPerson)) &&
+    /판정:\s*FAIL/.test(outputs[idOf(qaPerson)] || '') &&
+    builders.length > 0 && builders.every((p) => done.has(idOf(p)));
+
+  while (needsRework()) {
+    round++;
+    const report = outputs[idOf(qaPerson)];
+    const shared = {
+      roster, requirement, outputs, runDir, signal,
+      getStack, codebase, kind, contracts, backlog,
+    };
+
+    builders.forEach((p) => resetStage.run(stageIds[idOf(p)]));
+    await Promise.all(builders.map((p) =>
+      runPerson(db, p, {
+        ...shared, stageId: stageIds[idOf(p)], feedback: report, attempt: round,
+      })
+        .then((res) => { outputs[idOf(p)] = res.output; onCost(res.cost); })
+        .catch(() => { failed.add(idOf(p)); })
+    ));
+
+    resetStage.run(stageIds[idOf(qaPerson)]);
+    try {
+      const res = await runPerson(db, qaPerson, {
+        ...shared, stageId: stageIds[idOf(qaPerson)], attempt: round,
+      });
+      outputs[idOf(qaPerson)] = res.output;
+      onCost(res.cost);
+    } catch { failed.add(idOf(qaPerson)); break; }
+  }
+
+  return round;
+}
+
+/**
+ * 실행이 끝난 뒤 남길 기록들.
+ *
+ * 여기서 실패해도 이미 만들어진 산출물은 그대로다. 문서를 못 쓴다고 작업 자체를
+ * 실패로 만들지 않는다.
+ */
+function recordRun(db, project, ctx) {
+  const { taskId, requirement, kind, status, runDir, roster, reason, outputs, idOf, qaPerson } = ctx;
+
+  const finalStages = db
+    .prepare('SELECT * FROM stages WHERE task_id = ? ORDER BY order_index').all(taskId);
   writeRunDocs(runDir, { taskId, requirement, status, stages: finalStages, roster, reason });
+
   // 이번에 정한 계약을 프로젝트 차원에 남긴다 (다음 작업이 이어받는다)
-  const contractPerson = roster.find((p) => p.key === 'lead') || roster.find((p) => p.key === 'architect');
+  const contractPerson = roster.find((p) => p.key === 'lead')
+    || roster.find((p) => p.key === 'architect');
   if (contractPerson && outputs[idOf(contractPerson)] && status !== 'cancelled') {
     try {
       appendContract(project, {
@@ -372,8 +472,6 @@ export async function runPipeline(db, requirement, project, opts = {}) {
   writeTrackRecord(project, db);
   writeRunsIndex(project, db);
   writeProjectReadme(project, db);
-
-  return { taskId, totalCost, runDir, status, roster, kind, gitResults, reworkRounds: round };
 }
 
 // ────────────────────────────────────────────────────────

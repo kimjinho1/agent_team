@@ -165,7 +165,7 @@
 <p>
   이렇게 써두면 AI가 실제로 깐깐한 QA처럼 굽니다. "이건 제 취향인데요"라고 트집 잡지 않고,
   진짜 문제만 골라냅니다. 16개 직무가 전부 이런 지시문을 하나씩 갖고 있고,
-  그게 전부 <code>roles.mjs</code> 파일 안에 들어 있습니다.
+  그게 전부 <code>src/roles.mjs</code> 파일 안에 들어 있습니다.
 </p>
 
 <div class="why">
@@ -425,20 +425,22 @@ AI 가 해석한 것 ($0.3):
 <h2><span class="num">9</span>파일 하나씩 무슨 일을 하나</h2>
 
 <div class="files">
-  <div class="file"><b>roles.mjs</b><span>16개 직무의 정의. 누가 누구를 기다리고, 어떤 지시문을 받고, 몇 단계로 일하는지. <strong>여기만 고치면 나머지가 따라옵니다.</strong></span></div>
-  <div class="file"><b>staffing.mjs</b><span>일감을 읽고 팀을 짭니다. 일의 성격(신규·기능추가·버그수정)도 여기서 판단합니다.</span></div>
-  <div class="file"><b>pipeline.mjs</b><span>실행 엔진. 누가 시작할 수 있는지 계속 확인하고, 동시에 출발시키고, 검토를 돌리고, 돈을 감시합니다. 가장 복잡한 파일.</span></div>
-  <div class="file"><b>onboarding.mjs</b><span>기존 코드를 읽어 파악합니다. 읽기 전용 권한만 씁니다.</span></div>
-  <div class="file"><b>history.mjs</b><span>git 기록에서 사실을 뽑습니다. AI를 안 부르니 공짜.</span></div>
-  <div class="file"><b>stack.mjs</b><span>"React로 만들자" 같은 결정을 읽어 실제 파일 이름으로 바꿉니다.</span></div>
-  <div class="file"><b>contracts.mjs</b><span>약속을 쌓고, 다음 사람에게 줄 요약을 만듭니다.</span></div>
-  <div class="file"><b>backlog.mjs</b><span>여기저기 흩어진 "이번엔 안 함"을 한 곳에 모읍니다.</span></div>
-  <div class="file"><b>git.mjs</b><span>브랜치 만들고 커밋하고 정리합니다. 안전장치가 전부 여기 있습니다.</span></div>
-  <div class="file"><b>projects.mjs</b><span>"이 폴더가 어느 프로젝트인지" 판단하고 기록합니다.</span></div>
-  <div class="file"><b>docs.mjs</b><span>문서를 자동으로 만듭니다. <code>roles.mjs</code>에서 뽑아내므로 실제와 어긋날 수 없습니다.</span></div>
-  <div class="file"><b>db.mjs</b><span>진행 상황을 저장하는 데이터베이스.</span></div>
-  <div class="file"><b>server.mjs</b><span>웹 화면에 데이터를 보내주는 서버.</span></div>
-  <div class="file"><b>public/<br>dashboard.html</b><span>픽셀 사무실 화면. 외부 라이브러리 없이 이 파일 하나에 다 들어 있습니다.</span></div>
+  <div class="file"><b>src/<br>roles.mjs</b><span>16개 직무의 정의. 누가 누구를 기다리고, 어떤 지시문을 받고, 몇 단계로 일하는지. <strong>여기만 고치면 나머지가 따라옵니다.</strong></span></div>
+  <div class="file"><b>src/<br>staffing.mjs</b><span>일감을 읽고 팀을 짭니다. 일의 성격(신규·기능추가·버그수정)도 여기서 판단합니다.</span></div>
+  <div class="file"><b>src/<br>pipeline.mjs</b><span>실행 엔진. 누가 시작할 수 있는지 계속 확인하고, 동시에 출발시키고, 검토를 돌리고, 돈을 감시합니다. 가장 복잡한 파일.</span></div>
+  <div class="file"><b>src/<br>onboarding.mjs</b><span>기존 코드를 읽어 파악합니다. 읽기 전용 권한만 씁니다.</span></div>
+  <div class="file"><b>src/<br>history.mjs</b><span>git 기록에서 사실을 뽑습니다. AI를 안 부르니 공짜.</span></div>
+  <div class="file"><b>src/<br>stack.mjs</b><span>"React로 만들자" 같은 결정을 읽어 실제 파일 이름으로 바꿉니다.</span></div>
+  <div class="file"><b>src/<br>contracts.mjs</b><span>약속을 쌓고, 다음 사람에게 줄 요약을 만듭니다.</span></div>
+  <div class="file"><b>src/<br>backlog.mjs</b><span>여기저기 흩어진 "이번엔 안 함"을 한 곳에 모읍니다.</span></div>
+  <div class="file"><b>src/<br>git.mjs</b><span>브랜치 만들고 커밋하고 정리합니다. 안전장치가 전부 여기 있습니다.</span></div>
+  <div class="file"><b>src/<br>projects.mjs</b><span>"이 폴더가 어느 프로젝트인지" 판단하고 기록합니다.</span></div>
+  <div class="file"><b>src/<br>docs.mjs</b><span>문서를 자동으로 만듭니다. <code>src/roles.mjs</code>에서 뽑아내므로 실제와 어긋날 수 없습니다.</span></div>
+  <div class="file"><b>src/<br>db.mjs</b><span>진행 상황을 저장하는 데이터베이스.</span></div>
+  <div class="file"><b>src/<br>server.mjs</b><span>웹 화면에 데이터를 보내주는 서버.</span></div>
+  <div class="file"><b>public/<br>dashboard.html</b><span>화면 구조와 앱 로직. 외부 라이브러리를 하나도 쓰지 않습니다.</span></div>
+  <div class="file"><b>public/<br>pixel.js</b><span>도트를 찍는 함수들. 책상·사람·침대를 픽셀 단위로 그립니다.</span></div>
+  <div class="file"><b>public/<br>dashboard.css</b><span>화면 스타일.</span></div>
 </div>
 
 <h2><span class="num">10</span>왜 픽셀 사무실인가</h2>
@@ -456,7 +458,7 @@ AI 가 해석한 것 ($0.3):
 
 <footer>
   더 깊은 내용은 <code>README.md</code> 에 있습니다.<br>
-  직무를 추가하거나 지시문을 바꾸고 싶으면 <code>roles.mjs</code> 만 고치면 됩니다.
+  직무를 추가하거나 지시문을 바꾸고 싶으면 <code>src/roles.mjs</code> 만 고치면 됩니다.
 </footer>
 
 </div>

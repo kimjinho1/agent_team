@@ -55,6 +55,10 @@ function itemsFromSections(text, patterns) {
   return out.slice(0, 8);   // 한 역할이 백로그를 도배하지 않게
 }
 
+// 프롬프트에 20개, 화면 패널에 12개까지만 보낸다
+const BRIEF_ITEMS = 20;
+const PANEL_ITEMS = 12;
+
 const norm = (s) => s.toLowerCase().replace(/[^가-힣a-z0-9]/g, '').slice(0, 60);
 
 /** 이번 실행에서 미룬 것들을 모은다 */
@@ -113,14 +117,14 @@ ${fresh.map((i) => `- [ ] ${i.text} — ${i.from}`).join('\n')}
 }
 
 /** 다음 PM 이 받을 요약 — 열려 있는 항목만 */
-export function backlogBrief(project, { limit = 20 } = {}) {
+export function backlogBrief(project) {
   if (!fs.existsSync(file(project))) return '';
   const raw = fs.readFileSync(file(project), 'utf8');
 
   const open = [...raw.matchAll(/^- \[ \] (.+)$/gm)].map((m) => m[1].trim());
   if (!open.length) return '';
 
-  return `[남은 일 — 이전 작업에서 미룬 것]\n${open.slice(0, limit).map((t) => `- ${t}`).join('\n')}\n\n` +
+  return `[남은 일 — 이전 작업에서 미룬 것]\n${open.slice(0, BRIEF_ITEMS).map((t) => `- ${t}`).join('\n')}\n\n` +
     `이번 요구사항과 관련된 항목이 있으면 범위에 넣을지 판단하세요. ` +
     `관련 없으면 무시하고, 넣지 않기로 했다면 굳이 언급하지 마세요.`;
 }
@@ -134,10 +138,10 @@ export function backlogStats(project) {
   };
 }
 
-export function openItems(project, limit = 12) {
+export function openItems(project) {
   if (!fs.existsSync(file(project))) return [];
   const raw = fs.readFileSync(file(project), 'utf8');
   return [...raw.matchAll(/^- \[ \] (.+?)\s*—\s*(\S+)\s*$/gm)]
     .map((m) => ({ text: m[1].trim(), from: m[2] }))
-    .slice(0, limit);
+    .slice(0, PANEL_ITEMS);
 }

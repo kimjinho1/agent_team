@@ -3,26 +3,28 @@
   "version": "2.0.0",
   "description": "로컬에서 도는 AI 개발 조직 — PM/기획/디자인/FE/BE/QA 에이전트가 병렬로 일하는 픽셀 오피스 대시보드",
   "type": "module",
-  "main": "server.mjs",
+  "main": "src/server.mjs",
   "bin": {
     "agent-org": "bin/agent-org.mjs"
   },
   "files": [
     "bin/",
     "public/",
-    "server.mjs",
-    "pipeline.mjs",
-    "roles.mjs",
-    "db.mjs"
+    "src/"
   ],
   "scripts": {
     "start": "node bin/agent-org.mjs"
   },
-  "keywords": ["ai", "agents", "claude", "pixel", "dashboard"],
+  "keywords": [
+    "ai",
+    "agents",
+    "claude",
+    "pixel",
+    "dashboard"
+  ],
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.283",
-    "better-sqlite3": "^13.0.3",
-    "dotenv": "^18.0.4"
+    "better-sqlite3": "^13.0.3"
   }
 }

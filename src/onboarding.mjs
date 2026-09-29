@@ -11,14 +11,13 @@ import { writeHistory, historyBrief } from './history.mjs';
 //
 // 이 단계만 파일 읽기를 허용한다. 쓰기·실행·네트워크는 막는다.
 
-const READ_ONLY = {
-  allowed: ['Read', 'Glob', 'Grep'],
-  blocked: [
-    'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
-    'Bash', 'BashOutput', 'KillShell',
-    'WebFetch', 'WebSearch', 'Task', 'Agent',
-  ],
-};
+// allowedTools 는 "물어보지 않고 허용" 목록이고, 실제로 막는 건 disallowedTools 다.
+const ALLOWED = ['Read', 'Glob', 'Grep'];
+const BLOCKED = [
+  'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+  'Bash', 'BashOutput', 'KillShell',
+  'WebFetch', 'WebSearch', 'Task', 'Agent',
+];
 
 const PROMPT = `당신은 이 프로젝트에 새로 합류한 개발자입니다.
 코드를 읽고 **다음 사람이 작업을 시작할 수 있는 최소 정보**를 정리하세요.
@@ -75,7 +74,7 @@ git 내력과 README·문서를 근거로, 이 프로젝트가 **무엇을 만�
 새로 합류한 사람이 어기면 안 되는 것. 없으면 "특이사항 없음".`;
 
 /** repo 들의 현재 커밋. 많이 달라졌으면 다시 훑어야 한다. */
-export function fingerprint(repos) {
+function fingerprint(repos) {
   return repos
     .map((r) => {
       try {
@@ -150,8 +149,8 @@ export async function runOnboarding(project, repos, { signal = { cancelled: fals
     options: {
       systemPrompt: '당신은 낯선 코드베이스를 빠르게 파악하는 개발자입니다. 읽은 것만 근거로 씁니다.',
       cwd: project.workspace,
-      allowedTools: READ_ONLY.allowed,
-      disallowedTools: READ_ONLY.blocked,
+      allowedTools: ALLOWED,
+      disallowedTools: BLOCKED,
       permissionMode: 'dontAsk',
       maxTurns: 30,
     },

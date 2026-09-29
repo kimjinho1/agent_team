@@ -69,28 +69,28 @@ ${contract.trim()}
  * 전문을 다 넣으면 실행이 쌓일수록 프롬프트가 터진다. 그래서 엔드포인트 목록과
  * 최근 계약 본문만 싣는다. 전문은 문서에 남아 있다.
  */
-export function contractsBrief(project, { recent = 1, limit = 5000 } = {}) {
+// 최근 계약 1건만, 5000자까지 넘긴다 — 더 주면 프롬프트만 커지고 도움은 안 된다.
+const RECENT_BLOCKS = 1;
+const BRIEF_CAP = 5000;
+
+export function contractsBrief(project) {
   if (!fs.existsSync(file(project))) return '';
   const raw = fs.readFileSync(file(project), 'utf8');
 
   const endpoints = extractEndpoints(raw);
   const blocks = raw.split(/\n---\n/).slice(1);        // 헤더 제외
-  const tail = blocks.slice(-recent).join('\n---\n');
+  const tail = blocks.slice(-RECENT_BLOCKS).join('\n---\n');
 
   const parts = ['[기존 인터페이스 계약 — 이 약속을 깨지 마세요]'];
   if (endpoints.length) {
     parts.push(`이미 확정된 엔드포인트:\n${endpoints.map((e) => `- ${e}`).join('\n')}`);
   }
   if (tail.trim()) {
-    parts.push(`가장 최근 계약:\n${tail.slice(0, limit)}`);
+    parts.push(`가장 최근 계약:\n${tail.slice(0, BRIEF_CAP)}`);
   }
   parts.push(
     '위 계약의 경로·필드명·응답 형식·에러 코드를 그대로 유지하세요.\n' +
     '바꿔야 한다면 계약 문서에 "변경 사유"와 "기존 사용처 영향"을 명시하세요.'
   );
   return parts.join('\n\n');
-}
-
-export function hasContracts(project) {
-  return fs.existsSync(file(project));
 }

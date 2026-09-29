@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CATALOG, ROLE_BY_KEY, artifactOf } from './roles.mjs';
-const ROLES = CATALOG;
 import { orgDir } from './db.mjs';
 const KEEP_RUNS = 20;   // 그 위로는 _archive 로 내린다
 
@@ -13,7 +12,7 @@ const pad = (n) => String(n).padStart(2, '0');
 
 /** `06-fe1-index.html` — 순서와 담당자가 파일명에 드러난다 */
 export function artifactName(person, stack) {
-  const i = ROLES.findIndex((r) => r.key === person.key);
+  const i = CATALOG.findIndex((r) => r.key === person.key);
   const who = person.total > 1 ? `${person.key}${person.instance + 1}` : person.key;
   // 기록 폴더는 평탄하게 둔다. src/server.js 같은 실제 경로는 스택에 남아 있고,
   // 코드가 repo 로 갈 때 그 경로를 쓴다.
@@ -37,46 +36,13 @@ export function repoPathOf(person, stack) {
   return dir === '.' ? name : path.join(dir, name);
 }
 
-function depthMap() {
-  const depth = {};
-  const of = (r) => {
-    if (depth[r.key] != null) return depth[r.key];
-    depth[r.key] = r.deps.length ? 1 + Math.max(...r.deps.map((d) => of(ROLE_BY_KEY[d]))) : 0;
-    return depth[r.key];
-  };
-  ROLES.forEach(of);
-  return depth;
-}
-
-/** Roles grouped by dependency depth — each group can run at the same time. */
-export function waves() {
-  const depth = depthMap();
-  const out = [];
-  ROLES.forEach((r) => {
-    (out[depth[r.key]] = out[depth[r.key]] || []).push(r);
-  });
-  return out;
-}
-
 // ---------------------------------------------------------------- charter
 
-function orgChart() {
-  return waves()
-    .map((w, i) => `  ${i + 1}차  ${w.map((r) => r.label).join(' , ')}`)
-    .join('\n');
-}
+/** 회사 운영 규칙 — ORG.md 본문 */
+function orgDoc() {
+  const byCat = Object.groupBy(CATALOG, (r) => r.category);
 
-export function writeCharter(workspace) {
-  const dir = orgDir(workspace);
-  fs.mkdirSync(path.join(dir, 'roles'), { recursive: true });
-
-  const consumers = (key) =>
-    ROLES.filter((r) => r.deps.includes(key)).map((r) => r.label);
-
-  const byCat = {};
-  ROLES.forEach((r) => { (byCat[r.category] = byCat[r.category] || []).push(r); });
-
-  const body = `# 이 회사는 어떻게 일하는가
+  return `# 이 회사는 어떻게 일하는가
 
 일감 하나를 받아 **동작하는 산출물**까지 만든다.
 고정된 팀은 없다. 일을 받을 때마다 **필요한 직무를 필요한 인원만큼 고용**한다.
@@ -90,7 +56,7 @@ export function writeCharter(workspace) {
 5. **같은 직무도 여럿일 수 있다.** 일이 충분히 크면 범위를 쪼개 나눠 맡는다.
 6. **판정은 근거를 댄다.** QA는 재현 경로 없는 지적을 하지 않는다. FAIL이면 다시 만든다.
 
-## 고용 가능한 직무 (${ROLES.length}종)
+## 고용 가능한 직무 (${CATALOG.length}종)
 
 ${Object.entries(byCat).map(([cat, list]) => `### ${cat}
 
@@ -121,14 +87,16 @@ agent-org/
 
 각 문서는 설명을 늘리지 않고 **다음 사람이 일을 시작할 최소 정보**만 담는다.
 `;
-  fs.writeFileSync(path.join(dir, 'ORG.md'), body);
+}
 
-  ROLES.forEach((role, i) => {
-    const from = role.deps.length
-      ? role.deps.map((d) => `\`${ROLE_BY_KEY[d].artifact}\` (${ROLE_BY_KEY[d].label})`).join('\n- ')
-      : '사용자 요구사항 한 줄';
-    const to = consumers(role.key);
-    const md = `# ${role.label}
+/** 직무 정의서 한 장 — 무엇을 받아 무엇을 내고 누구에게 넘기는지 */
+function roleDoc(role) {
+  const from = role.deps.length
+    ? role.deps.map((d) => `\`${ROLE_BY_KEY[d].artifact}\` (${ROLE_BY_KEY[d].label})`).join('\n- ')
+    : '사용자 요구사항 한 줄';
+  const to = CATALOG.filter((r) => r.deps.includes(role.key)).map((r) => r.label);
+
+  return `# ${role.label}
 
 > ${role.systemPrompt.split('\n')[0]}
 
@@ -147,7 +115,16 @@ ${(role.steps || []).map((s, k) => `${k + 1}. **${s.label}** — ${s.prompt.spli
 ## 지키는 것
 ${role.systemPrompt.split('\n').slice(1).filter(Boolean).map((l) => `- ${l.trim()}`).join('\n') || '- 위 역할 정의를 따른다'}
 `;
-    fs.writeFileSync(path.join(dir, 'roles', `${pad(i + 1)}-${role.key}.md`), md);
+}
+
+/** 회사 규칙과 직무 정의서를 보관 폴더에 깐다 */
+export function writeCharter(workspace) {
+  const dir = orgDir(workspace);
+  fs.mkdirSync(path.join(dir, 'roles'), { recursive: true });
+
+  fs.writeFileSync(path.join(dir, 'ORG.md'), orgDoc());
+  CATALOG.forEach((role, i) => {
+    fs.writeFileSync(path.join(dir, 'roles', `${pad(i + 1)}-${role.key}.md`), roleDoc(role));
   });
 }
 
@@ -208,7 +185,7 @@ ${verdict === 'FAIL' ? '> QA가 **FAIL** 판정했다. 상세 근거와 PASS 조
 누가 무엇을 만들어 누구에게 넘겼는지.
 
 ${stages.map((s) => {
-  const to = ROLES.filter((x) => x.deps.includes(s.role_key) && present.has(x.key)).map((x) => x.label);
+  const to = CATALOG.filter((x) => x.deps.includes(s.role_key) && present.has(x.key)).map((x) => x.label);
   const head = (s.output || '').split('\n').find((l) => l.trim()) || '';
   return `## ${s.role} → ${to.join(', ') || '(종료)'}
 - 맡은 범위: ${s.assignment || '전체'}
@@ -382,7 +359,7 @@ export function writeTrackRecord(project, db) {
 
 | 역할 | 처리 | 누적 비용 | 건당 평균 |
 |---|---|---|---|
-${ROLES.map((r) => {
+${CATALOG.map((r) => {
   const m = roleMap[r.label];
   return `| ${r.label} | ${m ? m.n : 0} | $${(m ? m.cost : 0).toFixed(2)} | $${(m ? m.avg_cost : 0).toFixed(2)} |`;
 }).join('\n')}

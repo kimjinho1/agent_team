@@ -12,6 +12,9 @@
     "public/",
     "src/"
   ],
+  "engines": {
+    "node": ">=21"
+  },
   "scripts": {
     "start": "node bin/agent-org.mjs"
   },

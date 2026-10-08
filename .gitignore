@@ -8,3 +8,4 @@ agent-org.db
 agent-org.db-*
 .agent-org/
 agent-org/
+.gstack/
